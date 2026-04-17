@@ -1,0 +1,131 @@
+:host { display: flex; flex-direction: column; height: 100vh; }
+
+.app-shell {
+  display: flex; flex-direction: column; height: 100vh;
+  background: #1b1b1b; color: #cccccc;
+}
+
+/* ─── Topbar ───────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #111111; border-bottom: 1px solid #2d2d30;
+  padding: 0 14px; height: 48px; flex-shrink: 0;
+}
+.topbar-left { display: flex; align-items: center; gap: 10px; }
+.ado-logo    { display: flex; align-items: center; opacity: 0.9; }
+h1 { margin: 0; font-size: 14px; font-weight: 600; color: #d4d4d4; }
+.subtitle          { font-size: 11px; color: #555; }
+.subtitle-stories  { color: #3B82F6; }
+.subtitle-bug      { color: #FF4444; }
+.subtitle-incoming { color: #d4860a; }
+.subtitle-hint     { color: #3e3e42; font-style: italic; }
+
+.topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; overflow: hidden; }
+
+.info-chip { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #666; }
+.info-dot  { display: inline-block; width: 20px; height: 2px; }
+.dep-dot {
+  background: repeating-linear-gradient(90deg, #0078d4 0, #0078d4 6px, transparent 6px, transparent 10px);
+}
+.handoff-dot { background: #0078d4; }
+.qa-dot {
+  background: repeating-linear-gradient(90deg, #13a10e 0, #13a10e 4px, transparent 4px, transparent 8px);
+}
+.divider { width: 1px; height: 20px; background: #2d2d30; flex-shrink: 0; }
+
+/* buttons */
+.btn-ado {
+  background: transparent; border: 1px solid #3e3e42; border-radius: 2px;
+  color: #cccccc; font-size: 12px; font-family: inherit;
+  padding: 4px 12px; cursor: pointer; white-space: nowrap;
+}
+.btn-ado:hover { background: #2d2d30; border-color: #555; }
+
+.btn-load {
+  background: rgba(0,120,212,0.12); border: 1px solid rgba(0,120,212,0.5);
+  border-radius: 2px; color: #0078d4; font-size: 12px; font-family: inherit;
+  padding: 4px 14px; cursor: pointer; white-space: nowrap;
+}
+.btn-load:hover:not([disabled]) { background: rgba(0,120,212,0.22); }
+.btn-load[disabled]  { opacity: 0.6; cursor: default; }
+
+.btn-bugs {
+  background: rgba(212,134,10,0.1); border: 1px solid rgba(212,134,10,0.4);
+  border-radius: 2px; color: #d4860a; font-size: 12px; font-family: inherit;
+  padding: 4px 12px; cursor: pointer; white-space: nowrap;
+}
+.btn-bugs:hover:not([disabled]) { background: rgba(212,134,10,0.2); }
+.btn-bugs[disabled] { opacity: 0.6; cursor: default; }
+
+.btn-undo {
+  background: rgba(212,134,10,0.12); border: 1px solid rgba(212,134,10,0.5);
+  border-radius: 2px; color: #d4860a; font-size: 12px; font-family: inherit;
+  padding: 4px 12px; cursor: pointer; white-space: nowrap;
+  animation: fadeIn 0.2s ease;
+}
+.btn-undo:hover { background: rgba(212,134,10,0.22); }
+
+.btn-reset-bugs {
+  background: transparent; border: 1px solid #3e3e42; border-radius: 2px;
+  color: #666; font-size: 12px; font-family: inherit;
+  padding: 4px 10px; cursor: pointer; white-space: nowrap;
+}
+.btn-reset-bugs:hover { color: #999; background: #2d2d30; }
+
+.btn-reset {
+  background: transparent; border: 1px solid #3e3e42; border-radius: 2px;
+  color: #555; font-size: 12px; font-family: inherit;
+  padding: 4px 10px; cursor: pointer; white-space: nowrap;
+}
+.btn-reset:hover { color: #999; background: #2d2d30; }
+
+.btn-add-pbi, .btn-add-qa {
+  background: transparent; border: 1px solid #6366f1; border-radius: 2px;
+  color: #6366f1; font-size: 12px; font-family: inherit;
+  padding: 4px 10px; cursor: pointer; white-space: nowrap;
+}
+.btn-add-pbi:hover, .btn-add-qa:hover { background: #6366f122; }
+
+.btn-load.loading,
+.btn-bugs.loading { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse   { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+@keyframes fadeIn  { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+/* ─── Drag hint ─────────────────────────────────── */
+.drag-hint {
+  background: #0d0d0d; border-bottom: 1px solid #1e1e1e;
+  padding: 4px 14px; font-size: 10px; color: #444; flex-shrink: 0;
+}
+.hint-dim      { color: #2e2e2e; font-style: italic; }
+.hint-incoming { color: #d4860a; }
+.hint-handoff  { color: #555; }
+
+/* ─── Editor toggle ─────────────────────────────── */
+.btn-editor {
+  background: transparent; border: 1px solid #3e3e42; border-radius: 2px;
+  color: #666; font-size: 12px; font-family: inherit;
+  padding: 4px 10px; cursor: pointer; white-space: nowrap;
+}
+.btn-editor:hover { color: #ccc; background: #2d2d30; }
+.btn-editor.active { color: #0078d4; border-color: rgba(0,120,212,0.5); background: rgba(0,120,212,0.08); }
+
+/* ─── Main content + editor panel ──────────────── */
+.main-content { flex: 1; display: flex; overflow: hidden; }
+.diagram-area { flex: 1; overflow: hidden; position: relative; }
+ng-diagram    { width: 100%; height: 100%; }
+
+
+.node-props-panel {
+  position: absolute; bottom: 16px; right: 16px;
+  background: #1e1e1e; border: 1px solid #3e3e42; border-radius: 6px;
+  padding: 10px 14px; display: flex; gap: 12px; align-items: center;
+  font-size: 12px; color: #ccc; z-index: 100; pointer-events: all;
+}
+.node-props-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #888; }
+.node-props-panel input[type="text"], .node-props-panel input:not([type]) {
+  background: #2d2d30; border: 1px solid #3e3e42; border-radius: 3px;
+  color: #fff; font-size: 12px; padding: 3px 7px; width: 160px;
+}
+.node-props-panel input[type="color"] {
+  width: 36px; height: 26px; border: none; background: none; cursor: pointer; padding: 0;
+}

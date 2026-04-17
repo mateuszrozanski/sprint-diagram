@@ -1,0 +1,70 @@
+<div class="swimlane"
+     [class.qa-lane]="isQA()"
+     [class.incoming-lane]="isIncoming()"
+     [class.header-lane]="isHeader()"
+     [style.height.px]="isHeader() ? headerH : rowH"
+     [style.width.px]="totalW">
+
+  @if (isHeader()) {
+    <!-- Corner cell -->
+    <div class="corner-cell" [style.width.px]="labelW" [style.min-width.px]="labelW">
+      <span class="corner-sprint">Sprint #42</span>
+      <span class="corner-dates">{{ dateRange }}</span>
+    </div>
+
+    <!-- Calendar columns -->
+    @for (slot of slots; track slot.date.getTime(); let i = $index) {
+      <div class="day-col"
+           [class.weekend]="slot.isWeekend"
+           [class.holiday]="slot.isHoliday"
+           [class.w2-start]="slot.sprintDay === 6"
+           [style.width.px]="slot.isWeekend ? wkndW : dayW"
+           [style.min-width.px]="slot.isWeekend ? wkndW : dayW">
+
+        @if (slot.isWeekend) {
+          <span class="wknd-text">{{ slot.dayName }}</span>
+        } @else {
+          <span class="col-dayname" [class.non-working-text]="slot.isHoliday">
+            {{ slot.dayName }}
+          </span>
+          <span class="col-date" [class.non-working-text]="slot.isHoliday">
+            {{ fmt(slot.date) }}
+          </span>
+          <span class="col-badge" [class.holiday-badge]="slot.isHoliday">
+            {{ slot.isHoliday ? '🚫' : 'D' + slot.sprintDay }}
+          </span>
+        }
+      </div>
+    }
+
+  } @else {
+    <!-- User / QA label -->
+    <div class="lane-label"
+         [class.qa-label]="isQA()"
+         [class.incoming-label]="isIncoming()"
+         [style.width.px]="labelW"
+         [style.min-width.px]="labelW"
+         [style.height.px]="rowH">
+      @if (isQA())       { <span class="qa-icon">🧪</span> }
+      @if (isIncoming()) { <span class="qa-icon">📥</span> }
+      <span class="lane-name">{{ node().data['label'] }}</span>
+    </div>
+
+    <!-- Lane body -->
+    <div class="lane-body" [style.height.px]="rowH">
+
+      <!-- Non-working day bands: one per weekend/holiday column -->
+      @for (zone of nonWorkingZones; track zone.left) {
+        <div class="non-working-band"
+             [style.left.px]="zone.left"
+             [style.width.px]="zone.width">
+        </div>
+      }
+
+      <!-- Week 2 separator -->
+      <div class="w2-sep" [style.left.px]="w2SepX"></div>
+
+    </div>
+  }
+
+</div>

@@ -1,0 +1,53 @@
+<div class="pbi-card"
+     [style.width.px]="effectiveWidth()"
+     [style.height.px]="height()"
+     [style.--accent]="color()"
+     [style.background]="cardBackground()">
+
+  <!-- Left accent bar -->
+  <div class="accent-bar" [style.background]="color()"></div>
+
+  <div class="card-body">
+    <!-- ID + role + assignees -->
+    <div class="card-top">
+      <span class="pbi-id" [style.color]="color()">{{ displayId() }}</span>
+      @if (isBug()) { <span class="bug-badge">🐛 BUG</span> }
+      @if (phaseRole()) { <span class="role-badge" [style.border-color]="color()">{{ phaseRole() }}</span> }
+      <div class="avatars">
+        @for (uid of assignees(); track uid) {
+          <span class="avatar"
+                [style.background]="color()"
+                [title]="userName(uid)">{{ initials(uid) }}</span>
+        }
+      </div>
+    </div>
+
+    <!-- Title -->
+    <div class="card-title">{{ node().data['title'] }}</div>
+
+    <!-- Date range + dep count -->
+    <div class="card-meta">
+      <span class="meta-date">{{ dateRange() }}</span>
+      @if (hasDeps()) {
+        <span class="meta-dep">↤ {{ node().data['dependencies'].length }}</span>
+      }
+      @if (nonWorkingZones().length) {
+        <span class="meta-wknd" title="Spans non-working days">⛔ {{ nonWorkingZones().length }} off</span>
+      }
+    </div>
+  </div>
+
+  <!-- Resize handle (right edge) -->
+  <div class="resize-handle" (pointerdown)="onResizeStart($event)"></div>
+
+  <!-- Ports -->
+  <ng-diagram-port id="in"  [type]="'target'" [side]="'left'">
+    <div class="port port-in"></div>
+  </ng-diagram-port>
+  <ng-diagram-port id="out" [type]="'source'" [side]="'right'" (pointerdown)="$event.stopPropagation()">
+    <div class="port port-out"></div>
+  </ng-diagram-port>
+  <ng-diagram-port id="qa"  [type]="'source'" [side]="'bottom'" (pointerdown)="$event.stopPropagation()">
+    <div class="port port-qa"></div>
+  </ng-diagram-port>
+</div>

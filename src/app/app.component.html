@@ -1,0 +1,125 @@
+<div class="app-shell" [class.panel-open]="editorOpen()">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="ado-logo">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+          <path d="M29 5.5L17.5 2v28L2 24.5V8.5L17.5 5V2L29 5.5Z" fill="#0078d4"/>
+        </svg>
+      </span>
+      <div>
+        <h1>Sprint Dependency Board</h1>
+        @if (!sprint.isLoaded()) {
+          <span class="subtitle">Sprint #42 · {{ dataStore.users().length }} devs ·
+            <span class="subtitle-hint">click "Load PBIs from ADO" to load the sprint</span>
+          </span>
+        } @else {
+          <span class="subtitle">
+            Sprint #42 ·
+            <span class="subtitle-stories">{{ sprint.loadedStats().stories }} stories</span> ·
+            <span class="subtitle-bug">{{ sprint.loadedStats().bugs }} bugs</span>
+            @if (sprint.isBugsLoaded()) {
+              · <span class="subtitle-incoming">+{{ sprint.loadedStats().incoming }} incoming</span>
+            }
+            · {{ dataStore.users().length }} devs
+          </span>
+        }
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      @if (sprint.isLoaded()) {
+        <div class="info-chip"><span class="info-dot dep-dot"></span>Dependency</div>
+        <div class="info-chip"><span class="info-dot handoff-dot"></span>Handoff</div>
+        <div class="info-chip"><span class="info-dot qa-dot"></span>QA</div>
+        <div class="divider"></div>
+
+        @if (!sprint.isBugsLoaded()) {
+          <button class="btn-bugs"
+                  [class.loading]="sprint.isBugsLoading()"
+                  [disabled]="sprint.isBugsLoading()"
+                  (click)="loadIncomingBugs()">
+            @if (sprint.isBugsLoading()) { ⏳ Loading... } @else { 🐛 Simulate incoming bugs }
+          </button>
+        } @else {
+          <button class="btn-reset-bugs" (click)="resetBugs()">↺ Reset bugs</button>
+        }
+
+        @if (sprint.undoLabel()) {
+          <button class="btn-undo" (click)="drag.undoAssignment()">↩ Undo: {{ sprint.undoLabel() }}</button>
+        }
+
+        <div class="divider"></div>
+        <button class="btn-add-pbi" (click)="addManualPbi()">+ PBI</button>
+        <button class="btn-add-qa"  (click)="addManualQaTask()">+ QA Task</button>
+        <button class="btn-reset" (click)="resetDiagram()">↺ Reset sprint</button>
+      }
+      @if (!sprint.isLoaded()) {
+        <button class="btn-load"
+                [class.loading]="sprint.isLoading()"
+                [disabled]="sprint.isLoading()"
+                (click)="loadFromAdo()">
+          @if (sprint.isLoading()) { ⏳ Connecting to ADO... } @else { 📥 Load PBIs from ADO }
+        </button>
+      }
+      <button class="btn-ado" (click)="fitView()">Fit to view</button>
+      <div class="divider"></div>
+      <button class="btn-editor" [class.active]="editorOpen()" (click)="editorOpen.set(!editorOpen())">⚙ Editor</button>
+    </div>
+  </header>
+
+  <!-- Drag hint -->
+  <div class="drag-hint">
+    @if (!sprint.isLoaded()) {
+      <span class="hint-dim">Load data from ADO to start sprint planning</span>
+    } @else if (sprint.isBugsLoaded()) {
+      <span class="hint-incoming">📥 Drag a bug from "Incoming" onto a developer row to assign it — the timeline shifts automatically</span>
+      · Drag left/right to change dates · Resize by dragging the right edge
+    } @else {
+      Drag a card left/right to change dates ·
+      Drag to another row to reassign ·
+      Resize by dragging the right edge ·
+      <span class="hint-handoff">same color = same PBI</span>
+    }
+  </div>
+
+  <!-- Main content: diagram + optional editor panel -->
+  <div class="main-content">
+    <div class="diagram-area">
+      <ng-diagram
+        [model]="model"
+        [config]="diagramConfig()"
+        [nodeTemplateMap]="nodeTemplateMap"
+        [edgeTemplateMap]="edgeTemplateMap"
+        (diagramInit)="fitView()"
+        (nodeDragStarted)="drag.onDragStarted($event)"
+        (selectionMoved)="drag.onSelectionMoved($event)"
+        (nodeDragEnded)="drag.onDragEnded($event)"
+        (edgeDrawn)="onEdgeDrawn($event)"
+        (selectionChanged)="onSelectionChanged($event)"
+        (selectionRemoved)="onSelectionRemoved($event)"
+      />
+
+      @if (selectedNode()) {
+        <div class="node-props-panel">
+          @if (selectedNode()!.type === 'pbi') {
+            <label>Title
+              <input [(ngModel)]="nodeTitle"
+                     (ngModelChange)="applyNodeTitle($event)" />
+            </label>
+          }
+          <label>Color
+            <input type="color" [(ngModel)]="nodeColor"
+                   (ngModelChange)="applyNodeColor($event)" />
+          </label>
+        </div>
+      }
+    </div>
+
+    @if (editorOpen()) {
+      <app-sprint-editor-panel (rebuild)="rebuildSprint()" />
+    }
+  </div>
+
+</div>

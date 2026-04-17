@@ -1,0 +1,113 @@
+:host { display: block; }
+
+.swimlane {
+  display: flex; flex-direction: row;
+  border-bottom: 1px solid #2d2d30;
+  background: #1e1e1e; overflow: hidden; flex-shrink: 0;
+}
+.swimlane.header-lane {
+  background: #111111; border-bottom: 2px solid #3e3e42;
+}
+.swimlane.qa-lane      { background: #141f14; }
+.swimlane.incoming-lane { background: #1a1000; border-bottom: 2px dashed #3d2800; }
+
+/* ── Corner ── */
+.corner-cell {
+  height: 100%; background: #0d0d0d;
+  border-right: 1px solid #3e3e42;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+}
+.corner-sprint { color: #cccccc; font-size: 11px; font-weight: 600; }
+.corner-dates  { color: #555; font-size: 9px; }
+
+/* ── Header day columns ── */
+.day-col {
+  height: 100%; border-right: 1px solid #2d2d30;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px; flex-shrink: 0; position: relative;
+}
+
+/* Weekend columns */
+.day-col.weekend {
+  background: #0a0a0a;
+  border-right: 1px solid #1a1a1a;
+}
+
+/* Holiday columns: subtle warm tint */
+.day-col.holiday {
+  background: #1a1200;
+  border-right: 1px solid #2d2000;
+}
+/* Diagonal-stripe overlay inside holiday header cell */
+.day-col.holiday::after {
+  content: '';
+  position: absolute; inset: 0;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0px, transparent 5px,
+    rgba(0,0,0,0.25) 5px, rgba(0,0,0,0.25) 8px
+  );
+  pointer-events: none;
+}
+
+/* Week-2 left border */
+.day-col.w2-start { border-left: 2px solid #0078d4; }
+
+.col-dayname        { color: #d4d4d4; font-size: 12px; font-weight: 600; }
+.col-date           { color: #666;    font-size: 10px; }
+.non-working-text   { color: #4a3800 !important; }
+
+.col-badge {
+  font-size: 9px; font-weight: 600; color: #0078d4;
+  background: rgba(0,120,212,0.12);
+  padding: 1px 5px; border-radius: 2px;
+}
+.holiday-badge {
+  background: rgba(255,140,0,0.15) !important;
+  color: #ff8c00 !important;
+  font-size: 10px !important;
+}
+
+.wknd-text {
+  color: #2a2a2a; font-size: 9px; font-weight: 700;
+  writing-mode: vertical-rl; transform: rotate(180deg);
+}
+
+/* ── Lane label ── */
+.lane-label {
+  border-right: 1px solid #2d2d30; background: #161616;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 4px;
+  padding: 0 8px; flex-shrink: 0;
+}
+.lane-label.qa-label       { background: #0e180e; }
+.lane-label.incoming-label { background: #120b00; }
+.lane-name { font-size: 12px; font-weight: 600; color: #cccccc; text-align: center; }
+.qa-label .lane-name       { color: #13a10e; }
+.incoming-label .lane-name { color: #d4860a; }
+.qa-icon   { font-size: 16px; }
+
+/* ── Lane body ── */
+.lane-body { flex: 1; position: relative; overflow: visible; }
+
+/* Non-working band: greyed + diagonal stripes */
+.non-working-band {
+  position: absolute; top: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.30);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent           0px,
+    transparent           5px,
+    rgba(0, 0, 0, 0.20)   5px,
+    rgba(0, 0, 0, 0.20)   8px
+  );
+  pointer-events: none;
+}
+
+/* Week-2 separator */
+.w2-sep {
+  position: absolute; top: 0; bottom: 0; width: 2px;
+  background: rgba(0,120,212,0.15); pointer-events: none;
+}

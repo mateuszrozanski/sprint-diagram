@@ -1,0 +1,88 @@
+<div class="panel">
+
+  <!-- Header -->
+  <div class="panel-header">
+    <span class="panel-title">Sprint Editor</span>
+    <div class="tabs">
+      <button [class.active]="tab() === 'pbis'" (click)="tab.set('pbis')">PBIs</button>
+      <button [class.active]="tab() === 'team'" (click)="tab.set('team')">Team</button>
+    </div>
+  </div>
+
+  <!-- PBI form (overlay) -->
+  @if (editing()) {
+    <div class="form-overlay">
+      <div class="form-header">
+        {{ editing() === 'new' ? 'New PBI' : 'Edit ' + editingPbi?.id }}
+      </div>
+      <app-pbi-form
+        [existing]="editingPbi"
+        (saved)="savePbi($event)"
+        (cancelled)="editing.set(null)"
+      />
+    </div>
+  } @else {
+
+    <!-- PBIs tab -->
+    @if (tab() === 'pbis') {
+      <div class="tab-content">
+
+        @if (stories().length > 0) {
+          <div class="group-label">Stories</div>
+          @for (p of stories(); track p.id) {
+            <div class="pbi-row">
+              <span class="color-dot" [style.background]="p.color"></span>
+              <span class="pbi-id">{{ p.id }}</span>
+              <span class="pbi-title">{{ p.title }}</span>
+              <div class="row-actions">
+                <button (click)="editPbi(p)">✎</button>
+                <button class="del" (click)="deletePbi(p.id)">✕</button>
+              </div>
+            </div>
+          }
+        }
+
+        @if (bugs().length > 0) {
+          <div class="group-label">Bugs</div>
+          @for (p of bugs(); track p.id) {
+            <div class="pbi-row">
+              <span class="color-dot" [style.background]="p.color"></span>
+              <span class="pbi-id bug">{{ p.id }}</span>
+              <span class="pbi-title">{{ p.title }}</span>
+              <div class="row-actions">
+                <button (click)="editPbi(p)">✎</button>
+                <button class="del" (click)="deletePbi(p.id)">✕</button>
+              </div>
+            </div>
+          }
+        }
+
+        <button class="btn-add" (click)="newPbi()">+ New PBI / Bug</button>
+      </div>
+    }
+
+    <!-- Team tab -->
+    @if (tab() === 'team') {
+      <div class="tab-content">
+        @for (u of users(); track u.id) {
+          <div class="user-row">
+            <span class="user-id">{{ u.id }}</span>
+            <input [value]="u.name" (blur)="updateUserName(u, $event)" />
+            <button class="del" (click)="deleteUser(u.id)">✕</button>
+          </div>
+        }
+        <div class="add-user-row">
+          <input [(ngModel)]="newUserId"   placeholder="id (e.g. alex)" />
+          <input [(ngModel)]="newUserName" placeholder="Name" />
+          <button class="btn-sm-add" (click)="addUser()">Add</button>
+        </div>
+      </div>
+    }
+
+    <!-- Footer -->
+    <div class="panel-footer">
+      <button class="btn-rebuild" (click)="triggerRebuild()">⟳ Rebuild sprint</button>
+    </div>
+  }
+
+</div>

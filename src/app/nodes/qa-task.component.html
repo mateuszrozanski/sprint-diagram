@@ -1,0 +1,20 @@
+<div class="qa-card"
+     [style.width.px]="width()"
+     [style.height.px]="height()">
+  <div class="accent-bar" [style.background]="color()"></div>
+
+  <div class="card-body">
+    <div class="card-top">
+      <span class="qa-badge">QA</span>
+      <span class="qa-id" [style.color]="color()">{{ node().data['pbiId'] }}</span>
+    </div>
+    <div class="qa-date">{{ fromLabel() }}</div>
+  </div>
+
+  <ng-diagram-port id="qa-in"      [type]="'target'" [side]="'top'">
+    <div class="port"></div>
+  </ng-diagram-port>
+  <ng-diagram-port id="qa-in-left" [type]="'target'" [side]="'left'">
+    <div class="port"></div>
+  </ng-diagram-port>
+</div>

@@ -1,0 +1,53 @@
+@import 'ng-diagram/styles.css';
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ─── Override ng-diagram dark theme tokens to match Azure DevOps dark ─── */
+html[data-theme='dark'] {
+  /* ADO canvas background: #1b1b1b */
+  --ngd-diagram-background-color: #1b1b1b;
+
+  /* Node defaults */
+  --ngd-node-bg-primary-default:       #252526;
+  --ngd-node-stroke-primary-default:   #3e3e42;
+  --ngd-node-stroke-primary-hover:     #0078d4;
+
+  /* Port colors */
+  --ngd-node-port-fill-default:        #3e3e42;
+  --ngd-node-port-fill-active:         #0078d4;
+  --ngd-node-port-stroke-default:      #555;
+  --ngd-node-port-stroke-active:       #fff;
+
+  /* Edge defaults */
+  --ngd-default-edge-stroke:           #555;
+  --ngd-default-edge-stroke-hover:     #888;
+  --ngd-default-edge-stroke-selected:  #0078d4;
+
+  /* Background grid dots/lines */
+  --ngd-background-dot-color:          #2d2d30;
+  --ngd-background-line-minor-color:   #252526;
+  --ngd-background-line-major-color:   #2d2d30;
+
+  /* Selection */
+  --ngd-focus-ring-node-active:        rgba(0,120,212,0.35);
+  --ngd-selected-node-box-shadow:      0 0 0 2px #0078d4;
+  --ngd-box-selection-border-color:    #0078d4;
+  --ngd-box-selection-background:      rgba(0,120,212,0.08);
+
+  /* Nav / zoom controls */
+  --ngd-nav-button-primary-default:    #888;
+  --ngd-nav-button-primary-hover:      rgba(255,255,255,0.06);
+
+  /* UI surfaces */
+  --ngd-ui-bg-primary-default:         #2d2d30;
+  --ngd-ui-bg-tertiary-default:        #252526;
+  --ngd-ui-border-color:               #3e3e42;
+
+  /* Text */
+  --ngd-txt-primary-default:           #cccccc;
+}

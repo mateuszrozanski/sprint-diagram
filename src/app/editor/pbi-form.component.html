@@ -1,0 +1,75 @@
+<div class="form">
+
+  <div class="form-row">
+    <label>ID</label>
+    <input [(ngModel)]="form.id" placeholder="PBI-106" [disabled]="!!existing()" />
+  </div>
+
+  <div class="form-row">
+    <label>Title</label>
+    <input [(ngModel)]="form.title" placeholder="Feature description" />
+  </div>
+
+  <div class="form-row">
+    <label>Color</label>
+    <div class="color-row">
+      <input type="color" [(ngModel)]="form.color" />
+      <button type="button" class="btn-sm" (click)="randomizeColor()">↻ Random</button>
+      <span class="color-preview" [style.background]="form.color"></span>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <label>Type</label>
+    <div class="toggle-group">
+      <button type="button" [class.active]="form.type === 'Story'" (click)="form.type = 'Story'">Story</button>
+      <button type="button" [class.active]="form.type === 'Bug'"   (click)="form.type = 'Bug'">Bug</button>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <label>Priority</label>
+    <input type="number" [(ngModel)]="form.priority" min="1" max="5" />
+  </div>
+
+  <!-- Phases -->
+  <div class="section-label">Phases</div>
+  @for (phase of form.phases; track $index) {
+    <div class="phase-row">
+      <select [(ngModel)]="phase.assigneeId">
+        <option value="unassigned">— unassigned —</option>
+        @for (u of users(); track u.id) {
+          <option [value]="u.id">{{ u.name }}</option>
+        }
+      </select>
+      <input type="number" [(ngModel)]="phase.days" min="0.5" max="10" step="0.5" title="Days" />
+      <input [(ngModel)]="phase.role" placeholder="Role" />
+      <label class="parallel-label" title="Runs in parallel with previous phase">
+        <input type="checkbox" [(ngModel)]="phase.parallel" [disabled]="$index === 0" />
+        <span>parallel</span>
+      </label>
+      <button type="button" class="btn-remove" (click)="removePhase($index)" [disabled]="form.phases.length === 1">✕</button>
+    </div>
+  }
+  <button type="button" class="btn-sm add-phase" (click)="addPhase()">+ Add phase</button>
+
+  <!-- Dependencies (stories only) -->
+  @if (form.type === 'Story' && otherPbis().length > 0) {
+    <div class="section-label">Depends on</div>
+    <div class="dep-list">
+      @for (p of otherPbis(); track p.id) {
+        <label class="dep-item">
+          <input type="checkbox" [checked]="hasDep(p.id)" (change)="toggleDep(p.id)" />
+          <span class="dep-dot" [style.background]="p.color"></span>
+          {{ p.id }} — {{ p.title }}
+        </label>
+      }
+    </div>
+  }
+
+  <div class="form-actions">
+    <button type="button" class="btn-cancel" (click)="cancel()">Cancel</button>
+    <button type="button" class="btn-save" (click)="submit()">Save</button>
+  </div>
+
+</div>

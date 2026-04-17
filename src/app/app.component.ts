@@ -25,6 +25,7 @@ import { SprintService }              from './sprint.service';
 import { SprintDataStoreService }     from './sprint-data-store.service';
 import { SprintEditorPanelComponent } from './editor/sprint-editor-panel.component';
 import { DiagramDragService }         from './diagram-drag.service';
+import { AdoService }                 from './ado.service';
 
 @Component({
   selector: 'app-root',
@@ -42,6 +43,7 @@ export class AppComponent implements AfterViewInit {
   protected readonly sprint        = inject(SprintService);
   protected readonly dataStore     = inject(SprintDataStoreService);
   protected readonly drag          = inject(DiagramDragService);
+  private   readonly adoService    = inject(AdoService);
 
   protected readonly editorOpen   = signal(false);
   protected readonly selectedNode = signal<DiagramNode | null>(null);
@@ -228,13 +230,26 @@ export class AppComponent implements AfterViewInit {
 
   // ── Sprint load / reset ───────────────────────────────────────────────────
 
+  // Ustaw na true żeby pobierać z mock ADO serwera (localhost:3333)
+  // Ustaw na false żeby używać hardcoded mocków z sprint-data.ts
+  private readonly useAdo = true;
+
   async loadFromAdo(): Promise<void> {
     if (this.sprint.isLoading()) return;
     this.sprint.isLoading.set(true);
 
-    await new Promise<void>(r => setTimeout(r, 1200));
+    let pbis = this.dataStore.pbis();
 
-    const pbis = this.dataStore.pbis();
+    if (this.useAdo) {
+      try {
+        pbis = await this.adoService.fetchSprintItems(this.dataStore.users());
+      } catch (err) {
+        console.error('[AdoService] fetch failed, falling back to mock data', err);
+      }
+    } else {
+      await new Promise<void>(r => setTimeout(r, 1200));
+    }
+
     const { nodes, edges, assigneeMap, depsMap } = buildNodesFromAdo(pbis, this.dataStore.users());
     this.sprint.applyMaps(assigneeMap, depsMap);
 

@@ -1,5 +1,6 @@
 <div class="pbi-card"
      [class.blocked]="isBlocked()"
+     [attr.data-diff-flag]="node().data['diffFlag']"
      [style.width.px]="effectiveWidth()"
      [style.height.px]="height()"
      [style.opacity]="node().data['filterOpacity'] ?? 1"

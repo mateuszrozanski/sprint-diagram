@@ -66,6 +66,125 @@ export class AppComponent implements AfterViewInit {
   protected readonly currentSprint   = signal<{ name: string; startDate: string | null; finishDate: string | null } | null>(null);
   protected readonly selectedNode    = signal<DiagramNode | null>(null);
 
+  // ── Auto-refresh nowych bugów ───────────────────────────────────────────────
+  protected readonly newBugsCount = signal(0);
+  private knownPbiIds = new Set<string>();
+  private bugPollTimer: ReturnType<typeof setInterval> | null = null;
+
+  private startBugPolling(): void {
+    if (this.bugPollTimer) return;
+    // Co 5 min sprawdzaj czy są nowe karty.
+    this.bugPollTimer = setInterval(() => this.checkForNewBugs(), 5 * 60 * 1000);
+  }
+
+  private async checkForNewBugs(): Promise<void> {
+    if (!this.sprint.isLoaded()) return;
+    try {
+      const wiqlRes = await fetch('/api/ado/wiql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (!wiqlRes.ok) return;
+      const data = await wiqlRes.json();
+      const currentIds = new Set<string>((data.workItems ?? []).map((w: any) => String(w.id)));
+      let newCount = 0;
+      for (const id of currentIds) if (!this.knownPbiIds.has(id)) newCount++;
+      if (newCount > 0) {
+        this.newBugsCount.set(newCount);
+      }
+    } catch (err) { console.warn('[bug poll]', err); }
+  }
+
+  protected dismissNewBugsBanner(): void {
+    this.newBugsCount.set(0);
+    // Po dismiss zaznacz aktualnych jako "known".
+    this.knownPbiIds = new Set(this.dataStore.pbis().map(p => p.id));
+  }
+
+  // ── Yesterday → today diff ──────────────────────────────────────────────────
+  protected readonly showDiff      = signal(false);
+  protected readonly diffSummary   = signal<{ changed: number; closed: number; added: number; reEstimated: number } | null>(null);
+  private yesterdayStateCache: any = null;
+
+  async toggleDiff(): Promise<void> {
+    if (this.showDiff()) {
+      this.showDiff.set(false);
+      this.diffSummary.set(null);
+      this.clearDiffHighlights();
+      return;
+    }
+    // Pobierz wczorajszy (lub najstarszy dostępny) snapshot.
+    try {
+      const listRes = await fetch('/api/state?snapshots=list');
+      const { days } = await listRes.json();
+      if (!days?.length) {
+        this.diffSummary.set({ changed: 0, closed: 0, added: 0, reEstimated: 0 });
+        this.showDiff.set(true);
+        return;
+      }
+      // Wybierz wczorajszy lub najświeższy z dostępnych <today.
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterdayKey = days.find((d: string) => d < today) ?? days[0];
+      const snapRes = await fetch(`/api/state?snapshot=${yesterdayKey}`);
+      const { state } = await snapRes.json();
+      this.yesterdayStateCache = state;
+      this.computeDiff(state);
+      this.showDiff.set(true);
+    } catch (err) {
+      console.warn('[diff] failed', err);
+    }
+  }
+
+  private computeDiff(yesterday: any): void {
+    if (!yesterday?.nodes) return;
+    const todayNodes = this.modelService.nodes() as DiagramNode[];
+    const yesterdayMap = new Map<string, any>();
+    for (const n of yesterday.nodes) yesterdayMap.set(n.id, n);
+
+    let changed = 0, closed = 0, added = 0, reEstimated = 0;
+    const updates: NodeUpdate[] = [];
+    for (const n of todayNodes) {
+      if (n.type !== 'pbi' && n.type !== 'qa-task') continue;
+      const yNode = yesterdayMap.get(n.id);
+      if (!yNode) {
+        added++;
+        updates.push({ id: n.id, data: { ...n.data, diffFlag: 'added' } });
+        continue;
+      }
+      const yState = yNode.data?.['state'] as string | undefined;
+      const tState = n.data?.['state'] as string | undefined;
+      const yHours = yNode.data?.['phaseHours'] as number | undefined;
+      const tHours = n.data?.['phaseHours'] as number | undefined;
+      const isDone = (s?: string) => this.cat(s) === 'done' || this.cat(s) === 'stage';
+      if (tState !== yState && isDone(tState) && !isDone(yState)) {
+        closed++;
+        updates.push({ id: n.id, data: { ...n.data, diffFlag: 'closed' } });
+      } else if (tState !== yState) {
+        changed++;
+        updates.push({ id: n.id, data: { ...n.data, diffFlag: 'changed' } });
+      } else if (typeof tHours === 'number' && typeof yHours === 'number' && tHours > yHours) {
+        reEstimated++;
+        updates.push({ id: n.id, data: { ...n.data, diffFlag: 'reEstimated', diffHoursDelta: tHours - yHours } });
+      }
+    }
+    if (updates.length) this.modelService.updateNodes(updates);
+    this.diffSummary.set({ changed, closed, added, reEstimated });
+  }
+
+  private clearDiffHighlights(): void {
+    const all = this.modelService.nodes() as DiagramNode[];
+    const updates: NodeUpdate[] = [];
+    for (const n of all) {
+      if (!n.data?.['diffFlag']) continue;
+      const d = { ...n.data };
+      delete d['diffFlag'];
+      delete d['diffHoursDelta'];
+      updates.push({ id: n.id, data: d });
+    }
+    if (updates.length) this.modelService.updateNodes(updates);
+  }
+
   // ── Filters ─────────────────────────────────────────────────────────────────
   protected readonly filterAssignee = signal<string | null>(null); // assignee id (slug) lub null = all
   protected readonly hideDone       = signal(false);
@@ -225,8 +344,7 @@ export class AppComponent implements AfterViewInit {
   ngAfterViewInit(): void {
     this.restoreFromServer();
     this.startAutoSave();
-    // Modal-style outside click: klik poza panelem i poza kartą = zamknij.
-    // Capture żeby nie być blokowanym przez stopPropagation w ng-diagram.
+    this.startBugPolling();
     document.addEventListener('click', this.outsideClickCapture, true);
   }
 
@@ -555,6 +673,8 @@ export class AppComponent implements AfterViewInit {
         testers = result.testers;
         this.dataStore.setUsers(users);
         this.testers.set(testers);
+        this.knownPbiIds = new Set(pbis.map(p => p.id));
+        this.newBugsCount.set(0);
 
         if (result.iteration?.startDate && result.iteration.finishDate) {
           const days = countWorkingDays(result.iteration.startDate, result.iteration.finishDate);

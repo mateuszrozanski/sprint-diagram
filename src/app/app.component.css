@@ -131,6 +131,47 @@ ng-diagram    { width: 100%; height: 100%; }
 }
 
 /* ── Details panel (after selection) ─────────────────────────────────────── */
+/* ── New bugs banner ──────────────────────────────────────────────────────── */
+.new-bugs-banner {
+  background: rgba(239, 68, 68, 0.15); border-bottom: 1px solid rgba(239, 68, 68, 0.4);
+  padding: 8px 16px; color: #fca5a5; display: flex; align-items: center; gap: 12px;
+  font-size: 12px; animation: bannerPulse 2s ease-in-out infinite;
+}
+@keyframes bannerPulse {
+  0%, 100% { background: rgba(239, 68, 68, 0.15); }
+  50%      { background: rgba(239, 68, 68, 0.25); }
+}
+.banner-action {
+  background: #ef4444; color: #fff; border: none; padding: 4px 10px;
+  border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600;
+}
+.banner-action:hover { background: #dc2626; }
+.banner-dismiss {
+  background: transparent; color: #ccc; border: 1px solid #444; padding: 4px 10px;
+  border-radius: 4px; font-size: 11px; cursor: pointer;
+}
+.banner-dismiss:hover { color: #fff; }
+
+/* ── Diff banner ──────────────────────────────────────────────────────────── */
+.diff-banner {
+  background: #1a2530; border-bottom: 1px solid #2a3540;
+  padding: 6px 16px; font-size: 11px; color: #aab; display: flex;
+  align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.diff-banner strong { color: #fff; }
+.diff-tag { padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.diff-tag.added   { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+.diff-tag.closed  { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+.diff-tag.changed { background: rgba(168, 85, 247, 0.2); color: #d8b4fe; }
+.diff-tag.re-est  { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.diff-tag.none    { background: #2a2a2e; color: #888; }
+
+/* Diff card highlights */
+.pbi-card[data-diff-flag="added"]   { box-shadow: inset 0 0 0 2px #3b82f6; }
+.pbi-card[data-diff-flag="closed"]  { box-shadow: inset 0 0 0 2px #22c55e; }
+.pbi-card[data-diff-flag="changed"] { box-shadow: inset 0 0 0 2px #a855f7; }
+.pbi-card[data-diff-flag="reEstimated"] { box-shadow: inset 0 0 0 2px #f59e0b; }
+
 /* ── Filters bar ──────────────────────────────────────────────────────────── */
 .filters-bar {
   display: flex; align-items: center; gap: 6px; padding: 6px 16px;

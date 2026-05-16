@@ -8,10 +8,15 @@ const redis = new Redis({
 
 const KEY_PREFIX = 'sprint-board:';
 const DEFAULT_BOARD = 'current';
+const SNAPSHOT_PREFIX = 'sprint-snapshot:';
 
 function keyFor(req: VercelRequest): string {
   const board = String(req.query['board'] ?? DEFAULT_BOARD).slice(0, 64);
   return KEY_PREFIX + (board || DEFAULT_BOARD);
+}
+
+function isoDate(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -23,6 +28,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (req.method === 'GET') {
+      const url = new URL(req.url ?? '', 'http://x');
+      const snapshotDate = url.searchParams.get('snapshot');
+      if (snapshotDate) {
+        const snap = await redis.get(SNAPSHOT_PREFIX + snapshotDate);
+        return res.status(200).json({ state: snap ?? null, snapshotDate });
+      }
       const data = await redis.get(key);
       return res.status(200).json({ state: data ?? null });
     }
@@ -38,7 +49,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(413).json({ error: 'State too large (>1MB)' });
       }
       await redis.set(key, payload);
+
+      // Daily snapshot — pierwszy POST danego dnia tworzy snapshot pod sprint-snapshot:YYYY-MM-DD.
+      // Snapshoty trzymamy 30 dni (EX 2592000s).
+      const today = isoDate();
+      const snapKey = SNAPSHOT_PREFIX + today;
+      const existing = await redis.get(snapKey);
+      if (!existing) {
+        await redis.set(snapKey, payload, { ex: 60 * 60 * 24 * 30 });
+      }
+
       return res.status(200).json({ ok: true, updatedAt: payload.updatedAt });
+    }
+
+    // GET /api/state?snapshots=list → ostatnie 14 dni dostępnych snapshotów
+    if (req.method === 'GET' && new URL(req.url ?? '', 'http://x').searchParams.get('snapshots') === 'list') {
+      // Iterate przez ostatnie 30 dni i sprawdzaj które istnieją
+      const days: string[] = [];
+      const now = new Date();
+      for (let i = 0; i < 30; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const key2 = SNAPSHOT_PREFIX + isoDate(d);
+        const exists = await redis.exists(key2);
+        if (exists) days.push(isoDate(d));
+      }
+      return res.status(200).json({ days });
     }
 
     if (req.method === 'DELETE') {

@@ -53,6 +53,12 @@
           @if (sprint.isLoading()) { ⏳ Loading… } @else { 🔄 Reload from ADO }
         </button>
         <button class="btn-reset" (click)="resetDiagram()">↺ Reset</button>
+        <button class="btn-ado"
+                [class.active]="showDiff()"
+                (click)="toggleDiff()"
+                title="Pokaż zmiany od wczorajszego snapshotu">
+          @if (showDiff()) { ✓ Diff } @else { ↻ Diff vs yesterday }
+        </button>
       }
       @if (!sprint.isLoaded()) {
         <button class="btn-load"
@@ -65,6 +71,27 @@
       <button class="btn-ado" (click)="fitView()">Fit to view</button>
     </div>
   </header>
+
+  <!-- New bugs banner -->
+  @if (newBugsCount() > 0) {
+    <div class="new-bugs-banner">
+      🆕 <strong>{{ newBugsCount() }}</strong> new work item(s) detected in this sprint since last load.
+      <button class="banner-action" (click)="loadFromAdo()">Reload now</button>
+      <button class="banner-dismiss" (click)="dismissNewBugsBanner()">Dismiss</button>
+    </div>
+  }
+
+  <!-- Diff banner (when active) -->
+  @if (showDiff() && diffSummary(); as d) {
+    <div class="diff-banner">
+      <strong>Since yesterday:</strong>
+      @if (d.added)        { <span class="diff-tag added">+{{ d.added }} new</span> }
+      @if (d.closed)       { <span class="diff-tag closed">✓ {{ d.closed }} done</span> }
+      @if (d.changed)      { <span class="diff-tag changed">↻ {{ d.changed }} state-changed</span> }
+      @if (d.reEstimated)  { <span class="diff-tag re-est">↑ {{ d.reEstimated }} re-estimated</span> }
+      @if (!d.added && !d.closed && !d.changed && !d.reEstimated) { <span class="diff-tag none">no changes</span> }
+    </div>
+  }
 
   <!-- Filters bar -->
   @if (sprint.isLoaded()) {

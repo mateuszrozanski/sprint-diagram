@@ -217,6 +217,7 @@ export class AdoService {
         dependsOn:    dependsOn.length ? dependsOn : undefined,
         qaTesterId:   tester?.id,
         qaTesterName: tester?.name,
+        state:        fields['System.State'] as string | undefined,
       };
     });
 

@@ -131,6 +131,57 @@ ng-diagram    { width: 100%; height: 100%; }
 }
 
 /* ── Details panel (after selection) ─────────────────────────────────────── */
+/* ── Filters bar ──────────────────────────────────────────────────────────── */
+.filters-bar {
+  display: flex; align-items: center; gap: 6px; padding: 6px 16px;
+  background: #1a1a1c; border-bottom: 1px solid #2a2a2e;
+  flex-wrap: wrap; font-size: 11px; color: #ccc;
+}
+.filter-label { color: #888; margin-right: 4px; }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #2a2a2e; border: 1px solid #3a3a3e; color: #ccc;
+  font-size: 11px; padding: 3px 9px; border-radius: 14px; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.filter-chip:hover { background: #3a3a3e; }
+.filter-chip.active {
+  background: #0078d4; border-color: #0078d4; color: #fff;
+}
+.filter-chip.danger.active { background: #ef4444; border-color: #ef4444; }
+.filter-avatar {
+  display: inline-flex; width: 18px; height: 18px; border-radius: 50%;
+  background: #555; color: #fff; font-size: 9px; font-weight: 700;
+  align-items: center; justify-content: center;
+}
+.filter-divider { width: 1px; height: 18px; background: #3a3a3e; margin: 0 4px; }
+.filter-clear {
+  background: transparent; border: none; color: #888; cursor: pointer;
+  font-size: 11px; padding: 3px 6px;
+}
+.filter-clear:hover { color: #fff; }
+
+/* ── Sprint progress bar ──────────────────────────────────────────────────── */
+.sprint-progress {
+  margin-top: 4px; display: flex; align-items: center; gap: 8px;
+  font-size: 10px; color: #888;
+}
+.sprint-progress-bar {
+  position: relative; width: 240px; height: 6px;
+  background: #2d2d30; border-radius: 3px; overflow: hidden;
+}
+.sprint-progress-fill {
+  height: 100%; background: #10b981; transition: width 0.3s;
+}
+.sprint-progress.behind .sprint-progress-fill {
+  background: #f59e0b;
+}
+.sprint-progress-marker {
+  position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: #ddd; transform: translateX(-1px);
+}
+.behind-tag { color: #f59e0b; }
+
 .node-details-panel {
   position: absolute; top: 16px; right: 16px;
   width: 320px; max-height: calc(100vh - 200px);

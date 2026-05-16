@@ -19,11 +19,18 @@
             <strong>{{ currentSprint()?.name ?? 'Sprint' }}</strong> ·
             <span class="subtitle-stories">{{ sprint.loadedStats().stories }} stories</span> ·
             <span class="subtitle-bug">{{ sprint.loadedStats().bugs }} bugs</span>
-            @if (sprint.isBugsLoaded()) {
-              · <span class="subtitle-incoming">+{{ sprint.loadedStats().incoming }} incoming</span>
-            }
             · {{ dataStore.users().length }} devs
           </span>
+          <div class="sprint-progress" [class.behind]="sprintBehind()">
+            <div class="sprint-progress-bar">
+              <div class="sprint-progress-fill" [style.width.%]="sprintEffortPct()"></div>
+              <div class="sprint-progress-marker" [style.left.%]="sprintTimePct()" title="Now"></div>
+            </div>
+            <span class="sprint-progress-label">
+              {{ sprintEffortPct() }}% effort · {{ sprintTimePct() }}% time
+              @if (sprintBehind()) { · <strong class="behind-tag">behind</strong> }
+            </span>
+          </div>
         }
       </div>
     </div>
@@ -58,6 +65,32 @@
       <button class="btn-ado" (click)="fitView()">Fit to view</button>
     </div>
   </header>
+
+  <!-- Filters bar -->
+  @if (sprint.isLoaded()) {
+    <div class="filters-bar">
+      <span class="filter-label">Filters:</span>
+      @for (u of dataStore.users(); track u.id) {
+        <button class="filter-chip"
+                [class.active]="filterAssignee() === u.id"
+                [title]="u.name"
+                (click)="toggleAssigneeFilter(u.id)">
+          <span class="filter-avatar">{{ initialsOf(u.name) }}</span>
+          {{ u.name }}
+        </button>
+      }
+      <span class="filter-divider"></span>
+      <button class="filter-chip"
+              [class.active]="hideDone()"
+              (click)="toggleHideDone()">Hide done</button>
+      <button class="filter-chip danger"
+              [class.active]="onlyBlocked()"
+              (click)="toggleOnlyBlocked()">🚫 Only blocked</button>
+      @if (filterAssignee() || hideDone() || onlyBlocked()) {
+        <button class="filter-clear" (click)="clearFilters()">× Clear</button>
+      }
+    </div>
+  }
 
   <!-- Drag hint -->
   <div class="drag-hint">
@@ -133,6 +166,12 @@
             <div class="details-label">Days</div>
             <div class="details-value">D{{ sn.data['startDay'] }} – D{{ sn.data['endDay'] }}</div>
           </div>
+          @if (etaToQaForSelected()) {
+            <div class="details-section">
+              <div class="details-label">ETA to QA</div>
+              <div class="details-value">{{ etaToQaForSelected() }}</div>
+            </div>
+          }
         </div>
 
         <div class="details-actions">

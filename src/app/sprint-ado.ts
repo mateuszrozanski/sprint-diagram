@@ -211,6 +211,7 @@ export function buildNodesFromAdo(
         isBugType:   pl.parentType === 'Bug',
         phaseIdx:    pl.phaseIdx,
         totalPhases: pl.totalPhases,
+        state:       parentPbi?.state,
       },
     });
 

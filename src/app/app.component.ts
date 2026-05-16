@@ -65,6 +65,102 @@ export class AppComponent implements AfterViewInit {
   protected readonly editorOpen   = signal(false);
   protected readonly currentSprint   = signal<{ name: string; startDate: string | null; finishDate: string | null } | null>(null);
   protected readonly selectedNode    = signal<DiagramNode | null>(null);
+
+  // ── Filters ─────────────────────────────────────────────────────────────────
+  protected readonly filterAssignee = signal<string | null>(null); // assignee id (slug) lub null = all
+  protected readonly hideDone       = signal(false);
+  protected readonly onlyBlocked    = signal(false);
+
+  protected toggleAssigneeFilter(id: string): void {
+    this.filterAssignee.set(this.filterAssignee() === id ? null : id);
+    this.applyFiltersToNodes();
+  }
+  protected toggleHideDone(): void {
+    this.hideDone.set(!this.hideDone());
+    this.applyFiltersToNodes();
+  }
+  protected toggleOnlyBlocked(): void {
+    this.onlyBlocked.set(!this.onlyBlocked());
+    this.applyFiltersToNodes();
+  }
+  protected initialsOf(name: string): string {
+    return name.split(' ').map(p => p[0]).filter(Boolean).join('').toUpperCase().slice(0, 2);
+  }
+
+  protected clearFilters(): void {
+    this.filterAssignee.set(null);
+    this.hideDone.set(false);
+    this.onlyBlocked.set(false);
+    this.applyFiltersToNodes();
+  }
+
+  private applyFiltersToNodes(): void {
+    const fa = this.filterAssignee();
+    const hd = this.hideDone();
+    const ob = this.onlyBlocked();
+    const all = this.modelService.nodes() as DiagramNode[];
+    const updates: NodeUpdate[] = [];
+    for (const n of all) {
+      if (n.type !== 'pbi' && n.type !== 'qa-task') continue;
+      const cat = this.cat(n.data?.['state'] as string | undefined);
+      const matchesAssignee = !fa || n.data?.['primaryAssignee'] === fa;
+      const matchesDone     = !hd || (cat !== 'done' && cat !== 'stage');
+      const matchesBlocked  = !ob || cat === 'blocked';
+      const visible = matchesAssignee && matchesDone && matchesBlocked;
+      const newOpacity = visible ? 1 : 0.15;
+      if ((n.data?.['filterOpacity'] ?? 1) !== newOpacity) {
+        updates.push({ id: n.id, data: { ...n.data, filterOpacity: newOpacity } });
+      }
+    }
+    if (updates.length) this.modelService.updateNodes(updates);
+  }
+
+  /** % effortu zrobionego — done states / total. */
+  protected readonly sprintEffortPct = computed(() => {
+    const pbis = this.dataStore.pbis();
+    if (!pbis.length) return 0;
+    let totalH = 0, doneH = 0;
+    for (const p of pbis) {
+      for (const ph of p.phases) {
+        const h = (ph as any).hours ?? ph.days * 6;
+        totalH += h;
+        const cat = (p as any).state ? this.cat((p as any).state) : 'unknown';
+        if (cat === 'done' || cat === 'stage' || cat === 'qaTest' || cat === 'qaOwner') doneH += h;
+      }
+    }
+    return totalH ? Math.round((doneH / totalH) * 100) : 0;
+  });
+
+  /** % czasu sprintu który już minął. */
+  protected readonly sprintTimePct = computed(() => {
+    const cs = this.currentSprint();
+    if (!cs?.startDate || !cs?.finishDate) return 0;
+    const start = new Date(cs.startDate).getTime();
+    const end = new Date(cs.finishDate).getTime();
+    const now = Date.now();
+    if (now <= start) return 0;
+    if (now >= end)   return 100;
+    return Math.round(((now - start) / (end - start)) * 100);
+  });
+
+  protected readonly sprintBehind = computed(() =>
+    this.sprintEffortPct() < this.sprintTimePct() - 5
+  );
+
+  /** Inline category fn — DRY z stateAccentColor logic. */
+  private cat(s: string | undefined): string {
+    if (!s) return 'unknown';
+    const x = s.toLowerCase();
+    if (x.includes('blocked'))                return 'blocked';
+    if (/^0?9|closed|resolved|done/.test(x))  return 'done';
+    if (x.startsWith('08')) return 'stage';
+    if (x.startsWith('07.'))return 'qaOwner';
+    if (x.startsWith('07')) return 'qaTest';
+    if (x.startsWith('06')) return 'qaDeploy';
+    if (x.startsWith('05')) return 'review';
+    if (x.startsWith('04')) return 'inDev';
+    return 'new';
+  }
   protected readonly detailsPanelPos = signal<{ x: number; y: number } | null>(null);
   protected readonly copyLinkOk      = signal(false);
   private lastClickCoords: { x: number; y: number } | null = null;
@@ -303,6 +399,20 @@ export class AppComponent implements AfterViewInit {
     const uid = node.data?.['primaryAssignee'] as string | undefined;
     if (!uid) return 'Unassigned';
     return this.dataStore.users().find(u => u.id === uid)?.name ?? uid;
+  }
+
+  /** Day kiedy ostatnia faza tego PBI się kończy (kiedy QA może wziąć kartę). */
+  protected etaToQaForSelected(): string {
+    const node = this.selectedNode();
+    if (!node || node.type !== 'pbi') return '';
+    const pbiId = node.data?.['displayId'] as string | undefined;
+    if (!pbiId) return '';
+    const allNodes = this.modelService.nodes() as DiagramNode[];
+    const phases = allNodes.filter(n => n.type === 'pbi' && (n.data?.['displayId'] as string) === pbiId);
+    if (!phases.length) return '';
+    const maxEnd = Math.max(...phases.map(p => (p.data?.['endDay'] as number) ?? 0));
+    if (!maxEnd) return '';
+    return `D${maxEnd}`;
   }
 
   protected adoUrlForSelected(): string {

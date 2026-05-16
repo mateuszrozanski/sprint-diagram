@@ -23,6 +23,67 @@ export interface AdoPbi {
   /** QA tester id (slugified display name) — z `Custom.QATester` w ADO */
   qaTesterId?: string;
   qaTesterName?: string;
+  /** Raw state z `System.State` ADO — np. "04 - In Development", "97.1 - Blocked DEV" */
+  state?: string;
+}
+
+/** Skategoryzowane state'y dla wizualizacji. */
+export type StateCategory =
+  | 'new'        // 01 - New, 03 - Committed
+  | 'inDev'      // 04 - In Development
+  | 'review'    // 05 - In Code Review
+  | 'qaDeploy'  // 06.x - Deployed to QA
+  | 'qaTest'    // 07 - In QA testing
+  | 'qaOwner'   // 07.x - QA With Owner
+  | 'stage'     // 08 - Ready for Stage Migration
+  | 'done'       // 09+, Closed, Resolved
+  | 'blocked'   // 97.x - Blocked*
+  | 'unknown';
+
+export function categorizeState(state: string | undefined): StateCategory {
+  if (!state) return 'unknown';
+  const s = state.toLowerCase();
+  if (s.includes('blocked'))                       return 'blocked';
+  if (/^0?9|closed|resolved|done/.test(s))         return 'done';
+  if (s.startsWith('08'))                          return 'stage';
+  if (s.startsWith('07.'))                         return 'qaOwner';
+  if (s.startsWith('07'))                          return 'qaTest';
+  if (s.startsWith('06'))                          return 'qaDeploy';
+  if (s.startsWith('05'))                          return 'review';
+  if (s.startsWith('04'))                          return 'inDev';
+  if (/^0?1|^0?2|^0?3/.test(s))                    return 'new';
+  return 'unknown';
+}
+
+/** Kolor akcent-bara karty wg kategorii state'u (overlay nad parent color). */
+export function stateAccentColor(cat: StateCategory): string {
+  switch (cat) {
+    case 'blocked':  return '#ef4444';   // czerwony
+    case 'inDev':    return '#eab308';   // żółty
+    case 'review':   return '#a855f7';   // fioletowy
+    case 'qaDeploy': return '#06b6d4';   // cyjan
+    case 'qaTest':   return '#3b82f6';   // niebieski
+    case 'qaOwner':  return '#8b5cf6';   // jasny fiolet
+    case 'stage':    return '#10b981';   // zielony
+    case 'done':     return '#22c55e';   // jasnozielony
+    case 'new':      return '#94a3b8';   // szary
+    default:         return '#666666';
+  }
+}
+
+export function stateLabel(cat: StateCategory): string {
+  switch (cat) {
+    case 'blocked':  return '🚫 Blocked';
+    case 'inDev':    return 'In Dev';
+    case 'review':   return 'Review';
+    case 'qaDeploy': return 'Deployed QA';
+    case 'qaTest':   return 'In QA';
+    case 'qaOwner':  return 'QA (Owner)';
+    case 'stage':    return 'Ready Stage';
+    case 'done':     return 'Done';
+    case 'new':      return 'New';
+    default:         return '';
+  }
 }
 
 export interface SprintUser {

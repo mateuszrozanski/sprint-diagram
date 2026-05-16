@@ -1,6 +1,6 @@
 import { Component, computed, ElementRef, inject, input } from '@angular/core';
 import { NgDiagramNodeTemplate, NgDiagramPortComponent, NgDiagramModelService, NgDiagramViewportService } from 'ng-diagram';
-import { CALENDAR_SLOTS } from '../sprint-data';
+import { CALENDAR_SLOTS, categorizeState, stateAccentColor, stateLabel } from '../sprint-data';
 import type { DiagramNode, NodeUpdate } from '../sprint-data';
 import { L, getPbiNonWorkingZones, getEffectivePbiWidth, skipNonWorkingX } from '../layout';
 import { transitiveDependents, resolveCollisions, syncQaNodes, resolveQaCollisions } from '../sprint-utils';
@@ -34,6 +34,11 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
   protected isBug     = computed(() => !!this.node().data['isBugType']);
   protected displayId = computed(() => (this.node().data['displayId'] || this.node().data['id']) as string);
   protected phaseRole = computed(() => this.node().data['phaseRole'] as string | undefined);
+
+  protected stateCat   = computed(() => categorizeState(this.node().data['state'] as string | undefined));
+  protected stateColor = computed(() => stateAccentColor(this.stateCat()));
+  protected stateText  = computed(() => stateLabel(this.stateCat()));
+  protected isBlocked  = computed(() => this.stateCat() === 'blocked');
 
   /** Card width stretched to skip over any holidays within its span. */
   protected effectiveWidth = computed(() =>

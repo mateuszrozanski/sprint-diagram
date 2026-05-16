@@ -1,17 +1,24 @@
 <div class="pbi-card"
+     [class.blocked]="isBlocked()"
      [style.width.px]="effectiveWidth()"
      [style.height.px]="height()"
+     [style.opacity]="node().data['filterOpacity'] ?? 1"
      [style.--accent]="color()"
+     [style.--state-color]="stateColor()"
      [style.background]="cardBackground()">
 
-  <!-- Left accent bar -->
+  <!-- Left accent bar (parent PBI color) + state stripe na prawym brzegu accent-bara -->
   <div class="accent-bar" [style.background]="color()"></div>
+  <div class="state-stripe" [style.background]="stateColor()"></div>
 
   <div class="card-body">
     <!-- ID + role + assignees -->
     <div class="card-top">
       <span class="pbi-id" [style.color]="color()">{{ displayId() }}</span>
       @if (isBug()) { <span class="bug-badge">🐛 BUG</span> }
+      @if (stateText()) {
+        <span class="state-badge" [style.color]="stateColor()" [style.border-color]="stateColor()">{{ stateText() }}</span>
+      }
       @if (node().data['phaseHours']) {
         <span class="hours-badge" title="Remaining work">{{ node().data['phaseHours'] }}h</span>
       }

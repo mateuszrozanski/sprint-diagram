@@ -7,7 +7,13 @@
     <div class="card-top">
       <span class="qa-badge">QA</span>
       <span class="qa-id" [style.color]="color()">{{ node().data['pbiId'] }}</span>
+      @if (node().data['testerName']) {
+        <span class="qa-tester" [title]="node().data['testerName']">{{ node().data['testerName'] }}</span>
+      }
     </div>
+    @if (node().data['pbiTitle']) {
+      <div class="qa-title" [title]="node().data['pbiTitle']">{{ node().data['pbiTitle'] }}</div>
+    }
     <div class="qa-date">{{ fromLabel() }}</div>
   </div>
 

@@ -79,6 +79,11 @@ export class SprintDataStoreService {
     save(LS_USERS, this.users());
   }
 
+  setUsers(users: SprintUser[]): void {
+    this.users.set(users);
+    save(LS_USERS, users);
+  }
+
   resetToDefaults(): void {
     this.pbis.set([...ADO_MOCK_PBIS]);
     this.incomingBugs.set([...INCOMING_BUGS_MOCK]);

@@ -1,6 +1,7 @@
 import { ADO_MOCK_PBIS, CALENDAR_SLOTS, INCOMING_BUGS_MOCK, USERS, type AdoPbi, type PBI } from './sprint-data';
 import type { DiagramNode, DiagramEdge } from './sprint-data';
 import { L, getPbiPosition, getPbiWidth, getQaPosition, getQaWidth, getEffectiveQaWidth } from './layout';
+import { widthForHours } from './card-width';
 
 // ── Holiday-aware day helpers ────────────────────────────────────────────────
 
@@ -73,12 +74,17 @@ function topoSort(items: AdoPbi[]): AdoPbi[] {
  *
  * Returns assigneeMap and depsMap instead of mutating globals.
  */
-export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: string; name: string }[] = USERS): {
+export function buildNodesFromAdo(
+  items: AdoPbi[] = ADO_MOCK_PBIS,
+  users: { id: string; name: string }[] = USERS,
+  testers: { id: string; name: string }[] = [],
+): {
   nodes: DiagramNode[];
   edges: DiagramEdge[];
   assigneeMap: Map<string, string>;
   depsMap: Map<string, string[]>;
 } {
+  const testerIndex = new Map(testers.map((t, i) => [t.id, i]));
   const assigneeMap = new Map<string, string>();
   const depsMap     = new Map<string, string[]>();
 
@@ -91,6 +97,7 @@ export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: 
     parentColor: string;
     parentType: 'Story' | 'Bug';
     title: string;
+    parentTitle?: string;
     role: string;
     assigneeId: string;
     startDay: number;
@@ -148,7 +155,8 @@ export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: 
         parentId:    pbi.id,
         parentColor: pbi.color,
         parentType:  pbi.type,
-        title:       pbi.title,
+        title:       phase.title ?? pbi.title,
+        parentTitle: phase.title ? pbi.title : undefined,
         role:        phase.role,
         assigneeId:  assignee,
         startDay,
@@ -182,9 +190,10 @@ export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: 
       dependencies:    depsMap.get(pl.id) ?? [],
     };
 
-    const nodeWidth = pl.isHalfDay
-      ? Math.round(L.DAY_W / 2) - 2 * L.PAD
-      : getPbiWidth(pbiObj);
+    // Szerokość przez `widthForHours` (testowany) — patrz card-width.ts.
+    const parentPbi = items.find(p => p.id === pl.parentId);
+    const phaseHours = parentPbi?.phases[pl.phaseIdx]?.hours;
+    const nodeWidth = widthForHours(phaseHours);
 
     nodes.push({
       id:       pl.id,
@@ -196,7 +205,9 @@ export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: 
         width:       nodeWidth,
         height:      L.NODE_H,
         displayId:   pl.parentId,
+        parentTitle: pl.parentTitle,
         phaseRole:   pl.role,
+        phaseHours:  phaseHours,
         isBugType:   pl.parentType === 'Bug',
         phaseIdx:    pl.phaseIdx,
         totalPhases: pl.totalPhases,
@@ -208,7 +219,7 @@ export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: 
     edges.push({
       id:         `qa-edge-${pl.id}`,
       type:       'qa',
-      zOrder:     20,
+      zOrder:     5,
       source:     pl.id,
       sourcePort: 'qa',
       target:     `qa-${pl.parentId}`,
@@ -222,7 +233,7 @@ export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: 
       edges.push({
         id:         `handoff-${prevId}-${pl.id}`,
         type:       'handoff',
-        zOrder:     20,
+        zOrder:     5,
         source:     prevId,
         sourcePort: 'out',
         target:     pl.id,
@@ -241,6 +252,10 @@ export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: 
 
   for (const [pbiId, phases] of pbiGroups) {
     const rightmost = phases.reduce((best, p) => p.endDay > best.endDay ? p : best);
+    const pbi = items.find(p => p.id === pbiId);
+    const testerSubRow = pbi?.qaTesterId
+      ? (testerIndex.get(pbi.qaTesterId) ?? 0)
+      : 0;
     const pbiObj: PBI = {
       id:              rightmost.id,
       title:           rightmost.title,
@@ -255,13 +270,15 @@ export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: 
       id:       `qa-${pbiId}`,
       type:     'qa-task',
       zOrder:   10,
-      position: getQaPosition(pbiObj, users.length),
+      position: getQaPosition(pbiObj, users.length, testerSubRow),
       data: {
         pbiId,
-        color:  rightmost.parentColor,
-        endDay: rightmost.endDay,
-        width:  getQaWidth(),
-        height: L.NODE_H,
+        pbiTitle:   pbi?.title ?? '',
+        testerName: pbi?.qaTesterName ?? '',
+        color:      rightmost.parentColor,
+        endDay:     rightmost.endDay,
+        width:      Math.max(getQaWidth(), 120),
+        height:     L.NODE_H,
       },
     });
   }
@@ -295,7 +312,7 @@ export function buildNodesFromAdo(items: AdoPbi[] = ADO_MOCK_PBIS, users: { id: 
       edges.push({
         id:         `dep-${lastPhaseId}-${firstPhaseId}`,
         type:       'dep',
-        zOrder:     20,
+        zOrder:     5,
         source:     lastPhaseId,
         sourcePort: 'out',
         target:     firstPhaseId,
@@ -385,7 +402,7 @@ export function buildIncomingBugs(bugs: AdoPbi[] = INCOMING_BUGS_MOCK): {
     edges.push({
       id:         `qa-edge-${phaseId}`,
       type:       'qa',
-      zOrder:     20,
+      zOrder:     5,
       source:     phaseId,
       sourcePort: 'qa',
       target:     qaId,

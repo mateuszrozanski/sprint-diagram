@@ -90,7 +90,7 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
   private slotLabel(day: number): string {
     const s = CALENDAR_SLOTS.find(c => c.sprintDay === day);
     if (!s) return `D${day}`;
-    return `${s.dayName} ${MON[s.date.getMonth()]} ${s.date.getDate()}`;
+    return `${MON[s.date.getMonth()]} ${s.date.getDate()}`;
   }
 
   // ── Resize ────────────────────────────────────────────────────────────────

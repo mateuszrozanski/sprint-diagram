@@ -129,3 +129,74 @@ ng-diagram    { width: 100%; height: 100%; }
 .node-props-panel input[type="color"] {
   width: 36px; height: 26px; border: none; background: none; cursor: pointer; padding: 0;
 }
+
+/* ── Details panel (after selection) ─────────────────────────────────────── */
+.node-details-panel {
+  position: absolute; top: 16px; right: 16px;
+  width: 320px; max-height: calc(100vh - 200px);
+  background: #1e1e1e; border: 1px solid #3e3e42; border-radius: 8px;
+  padding: 14px 16px; color: #ddd; font-size: 12px;
+  z-index: 200; pointer-events: all;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+}
+.node-details-panel.floating {
+  position: fixed; top: auto; right: auto;
+  max-height: 70vh;
+}
+.node-details-panel.hidden-until-positioned {
+  visibility: hidden;
+}
+.details-actions {
+  display: flex; gap: 8px; margin-top: 4px;
+}
+.details-actions .details-link {
+  flex: 1; margin-top: 0;
+}
+.details-copy {
+  background: #3e3e42; border: none; cursor: pointer; font-family: inherit;
+}
+.details-copy:hover { background: #4e4e52; }
+.details-copy.ok {
+  background: #13a10e;
+}
+.details-close {
+  position: absolute; top: 6px; right: 8px;
+  background: transparent; border: none; color: #888;
+  font-size: 20px; line-height: 1; cursor: pointer;
+}
+.details-close:hover { color: #fff; }
+.details-header { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.details-id { font-weight: 700; font-size: 13px; }
+.details-badge {
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+}
+.details-badge.bug    { background: rgba(255,80,80,0.2); color: #ff8080; }
+.details-badge.hours  { background: rgba(255,183,77,0.12); color: #ffb74d; }
+.details-badge.role   { background: rgba(120,120,120,0.2); color: #ccc; border: 1px solid #555; }
+.details-badge.qa     { background: rgba(19,161,14,0.15); color: #13a10e; }
+
+.details-title { font-size: 14px; font-weight: 600; color: #fff; line-height: 1.4; }
+.details-section { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.details-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.details-value { font-size: 12px; color: #e0e0e0; word-break: break-word; }
+.details-row { display: flex; gap: 16px; }
+.details-row .details-section { flex: 1; }
+.details-link {
+  margin-top: 4px; padding: 6px 10px; background: #0e639c; color: #fff;
+  text-decoration: none; border-radius: 4px; text-align: center; font-size: 12px;
+}
+.details-link:hover { background: #1177bb; }
+.details-edit {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid #3e3e42;
+}
+.details-edit summary { cursor: pointer; color: #888; font-size: 11px; }
+.details-edit label { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-size: 11px; color: #888; }
+.details-edit input[type="text"], .details-edit input:not([type]) {
+  background: #2d2d30; border: 1px solid #3e3e42; border-radius: 3px;
+  color: #fff; font-size: 12px; padding: 3px 7px; width: 100%;
+}
+.details-edit input[type="color"] {
+  width: 36px; height: 26px; border: none; background: none; cursor: pointer; padding: 0;
+}

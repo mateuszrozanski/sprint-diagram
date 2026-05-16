@@ -8,7 +8,7 @@
   @if (isHeader()) {
     <!-- Corner cell -->
     <div class="corner-cell" [style.width.px]="labelW" [style.min-width.px]="labelW">
-      <span class="corner-sprint">Sprint #42</span>
+      <span class="corner-sprint">{{ node().data['sprintName'] || 'Sprint' }}</span>
       <span class="corner-dates">{{ dateRange }}</span>
     </div>
 

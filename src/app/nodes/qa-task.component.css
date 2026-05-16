@@ -44,6 +44,19 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+.qa-tester {
+  font-size: 9px; color: #999; font-style: italic;
+  margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.qa-title {
+  font-size: 10px; color: #aaa; line-height: 1.25;
+  margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .port {
   width: 10px; height: 10px; border-radius: 50%;
   background: #13a10e; border: 2px solid #1b1b1b;

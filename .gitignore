@@ -43,3 +43,8 @@ __screenshots__/
 .DS_Store
 Thumbs.db
 .vercel
+
+# Env (kopia .env.example wypełniona lokalnie)
+.env
+.env.local
+.env*.local

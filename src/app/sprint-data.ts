@@ -17,9 +17,12 @@ export interface AdoPbi {
   priority: number;        // 1 = highest
   type: 'Story' | 'Bug';
   /** Ordered list of work phases; handed off from one assignee to the next */
-  phases: { assigneeId: string; days: number; role: string; parallel?: boolean }[];
+  phases: { assigneeId: string; days: number; role: string; parallel?: boolean; title?: string; hours?: number }[];
   /** PBI IDs that must fully complete before this PBI can start */
   dependsOn?: string[];
+  /** QA tester id (slugified display name) — z `Custom.QATester` w ADO */
+  qaTesterId?: string;
+  qaTesterName?: string;
 }
 
 export interface SprintUser {
@@ -27,37 +30,46 @@ export interface SprintUser {
   name: string;
 }
 
-export const SPRINT_DAYS = 10;
+export let SPRINT_DAYS = 10;
 
-// Sprint starts on Monday April 6, 2026
+// Sprint start — mutowalny przez setSprintCalendar() po fetchu z ADO.
+// Default: Monday April 6, 2026.
 export const SPRINT_START = new Date(2026, 3, 6);
 
 /**
- * Custom (non-weekend) holidays during the sprint.
+ * Custom (non-weekend) holidays during the sprint. ISO date strings YYYY-MM-DD.
  */
-export const HOLIDAYS: ReadonlySet<string> = new Set([]);
+export const HOLIDAYS: Set<string> = new Set();
 
 function toIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** 12 calendar slots: Mon–Fri W1, Sat–Sun, Mon–Fri W2 */
 export interface CalendarSlot {
   isWeekend: boolean;
   isHoliday: boolean;
-  /** true when the slot cannot be worked (weekend OR holiday) */
   isNonWorking: boolean;
   dayName: string;
   date: Date;
-  sprintDay: number | null; // 1-10 for work days, null for weekends
+  sprintDay: number | null;
 }
 
-export const CALENDAR_SLOTS: CalendarSlot[] = (() => {
+/**
+ * Calendar slots — wypełnione przez computeCalendarSlots(), mutowane in-place
+ * przez setSprintCalendar(). Trzymamy ten sam array reference, żeby komponenty
+ * cache'ujące `CALENDAR_SLOTS` (np. swimlane.component) widziały nowe daty
+ * przy najbliższym re-renderze po rebuildLanes().
+ */
+export const CALENDAR_SLOTS: CalendarSlot[] = [];
+
+function computeCalendarSlots(): CalendarSlot[] {
   const slots: CalendarSlot[] = [];
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const offsets  = [0,1,2,3,4, 5,6, 7,8,9,10,11];
-  let sprintDay  = 1;
-  for (const offset of offsets) {
+  // 2-tygodniowy sprint: 12 calendar slots (Mon-Fri, Sat-Sun, Mon-Fri).
+  // Dla innej długości — dynamicznie generujemy slots aż uzbieramy SPRINT_DAYS roboczych.
+  let sprintDay = 1;
+  let offset    = 0;
+  while (sprintDay <= SPRINT_DAYS) {
     const d         = new Date(SPRINT_START);
     d.setDate(SPRINT_START.getDate() + offset);
     const dow       = d.getDay();
@@ -69,11 +81,29 @@ export const CALENDAR_SLOTS: CalendarSlot[] = (() => {
       isNonWorking: isWeekend || isHoliday,
       dayName: dayNames[dow],
       date: d,
-      sprintDay: isWeekend ? null : sprintDay++,
+      sprintDay: (isWeekend || isHoliday) ? null : sprintDay,
     });
+    if (!isWeekend && !isHoliday) sprintDay++;
+    offset++;
   }
   return slots;
-})();
+}
+
+CALENDAR_SLOTS.push(...computeCalendarSlots());
+
+/**
+ * Re-init kalendarza sprintu — woła się po fetchu z ADO (`/api/ado/iteration`).
+ * Mutuje SPRINT_START in-place i nadpisuje CALENDAR_SLOTS bez zmiany array ref.
+ */
+export function setSprintCalendar(start: Date, days: number, holidays?: Iterable<string>): void {
+  SPRINT_START.setFullYear(start.getFullYear(), start.getMonth(), start.getDate());
+  SPRINT_START.setHours(0, 0, 0, 0);
+  SPRINT_DAYS = Math.max(1, Math.floor(days));
+  HOLIDAYS.clear();
+  if (holidays) for (const h of holidays) HOLIDAYS.add(h);
+  const fresh = computeCalendarSlots();
+  CALENDAR_SLOTS.splice(0, CALENDAR_SLOTS.length, ...fresh);
+}
 
 export const USERS: SprintUser[] = [
   { id: 'anna',   name: 'Alice K.' },

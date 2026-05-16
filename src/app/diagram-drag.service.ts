@@ -202,7 +202,21 @@ export class DiagramDragService {
     currentNode: DiagramNode,
     updates: NodeUpdate[],
   ): void {
-    const centerY    = node.position.y + L.NODE_H / 2;
+    const centerY = node.position.y + L.NODE_H / 2;
+    const rawRow  = Math.floor((centerY - L.HEADER_H) / L.ROW_H);
+
+    // Row 0 = incoming → park bez assignee.
+    if (rawRow === 0) {
+      this.sprint.liveAssignee.set(node.id, 'unassigned');
+      const incomingY = L.HEADER_H + Math.round((L.ROW_H - L.NODE_H) / 2);
+      updates.push({
+        id:       node.id,
+        position: { x: node.position.x, y: incomingY },
+        data:     { ...currentNode.data, primaryAssignee: 'unassigned', collaborators: [] },
+      });
+      return;
+    }
+
     const targetRow  = this.yToRowIndex(centerY);
     const currentRow = this.rowIndexOf(node.id);
     const snapY      = this.rowSnapY(targetRow);

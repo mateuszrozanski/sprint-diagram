@@ -12,6 +12,9 @@
     <div class="card-top">
       <span class="pbi-id" [style.color]="color()">{{ displayId() }}</span>
       @if (isBug()) { <span class="bug-badge">🐛 BUG</span> }
+      @if (node().data['phaseHours']) {
+        <span class="hours-badge" title="Remaining work">{{ node().data['phaseHours'] }}h</span>
+      }
       @if (phaseRole()) { <span class="role-badge" [style.border-color]="color()">{{ phaseRole() }}</span> }
       <div class="avatars">
         @for (uid of assignees(); track uid) {
@@ -25,16 +28,12 @@
     <!-- Title -->
     <div class="card-title">{{ node().data['title'] }}</div>
 
-    <!-- Date range + dep count -->
-    <div class="card-meta">
-      <span class="meta-date">{{ dateRange() }}</span>
-      @if (hasDeps()) {
-        <span class="meta-dep">↤ {{ node().data['dependencies'].length }}</span>
-      }
-      @if (nonWorkingZones().length) {
-        <span class="meta-wknd" title="Spans non-working days">⛔ {{ nonWorkingZones().length }} off</span>
-      }
-    </div>
+    <!-- Dep marker only (date/parent w details panel) -->
+    @if (hasDeps()) {
+      <div class="card-meta">
+        <span class="meta-dep" title="Dependencies">↤ {{ node().data['dependencies'].length }}</span>
+      </div>
+    }
   </div>
 
   <!-- Resize handle (right edge) -->

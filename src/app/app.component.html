@@ -11,12 +11,12 @@
       <div>
         <h1>Sprint Dependency Board</h1>
         @if (!sprint.isLoaded()) {
-          <span class="subtitle">Sprint #42 · {{ dataStore.users().length }} devs ·
+          <span class="subtitle">{{ currentSprint()?.name ?? '—' }} · {{ dataStore.users().length }} devs ·
             <span class="subtitle-hint">click "Load PBIs from ADO" to load the sprint</span>
           </span>
         } @else {
           <span class="subtitle">
-            Sprint #42 ·
+            <strong>{{ currentSprint()?.name ?? 'Sprint' }}</strong> ·
             <span class="subtitle-stories">{{ sprint.loadedStats().stories }} stories</span> ·
             <span class="subtitle-bug">{{ sprint.loadedStats().bugs }} bugs</span>
             @if (sprint.isBugsLoaded()) {
@@ -35,25 +35,17 @@
         <div class="info-chip"><span class="info-dot qa-dot"></span>QA</div>
         <div class="divider"></div>
 
-        @if (!sprint.isBugsLoaded()) {
-          <button class="btn-bugs"
-                  [class.loading]="sprint.isBugsLoading()"
-                  [disabled]="sprint.isBugsLoading()"
-                  (click)="loadIncomingBugs()">
-            @if (sprint.isBugsLoading()) { ⏳ Loading... } @else { 🐛 Simulate incoming bugs }
-          </button>
-        } @else {
-          <button class="btn-reset-bugs" (click)="resetBugs()">↺ Reset bugs</button>
-        }
-
         @if (sprint.undoLabel()) {
           <button class="btn-undo" (click)="drag.undoAssignment()">↩ Undo: {{ sprint.undoLabel() }}</button>
         }
 
-        <div class="divider"></div>
-        <button class="btn-add-pbi" (click)="addManualPbi()">+ PBI</button>
-        <button class="btn-add-qa"  (click)="addManualQaTask()">+ QA Task</button>
-        <button class="btn-reset" (click)="resetDiagram()">↺ Reset sprint</button>
+        <button class="btn-load"
+                [class.loading]="sprint.isLoading()"
+                [disabled]="sprint.isLoading()"
+                (click)="loadFromAdo()">
+          @if (sprint.isLoading()) { ⏳ Loading… } @else { 🔄 Reload from ADO }
+        </button>
+        <button class="btn-reset" (click)="resetDiagram()">↺ Reset</button>
       }
       @if (!sprint.isLoaded()) {
         <button class="btn-load"
@@ -64,8 +56,6 @@
         </button>
       }
       <button class="btn-ado" (click)="fitView()">Fit to view</button>
-      <div class="divider"></div>
-      <button class="btn-editor" [class.active]="editorOpen()" (click)="editorOpen.set(!editorOpen())">⚙ Editor</button>
     </div>
   </header>
 
@@ -73,13 +63,10 @@
   <div class="drag-hint">
     @if (!sprint.isLoaded()) {
       <span class="hint-dim">Load data from ADO to start sprint planning</span>
-    } @else if (sprint.isBugsLoaded()) {
-      <span class="hint-incoming">📥 Drag a bug from "Incoming" onto a developer row to assign it — the timeline shifts automatically</span>
-      · Drag left/right to change dates · Resize by dragging the right edge
     } @else {
       Drag a card left/right to change dates ·
       Drag to another row to reassign ·
-      Resize by dragging the right edge ·
+      Drag to "Incoming" to park ·
       <span class="hint-handoff">same color = same PBI</span>
     }
   </div>
@@ -92,7 +79,6 @@
         [config]="diagramConfig()"
         [nodeTemplateMap]="nodeTemplateMap"
         [edgeTemplateMap]="edgeTemplateMap"
-        (diagramInit)="fitView()"
         (nodeDragStarted)="drag.onDragStarted($event)"
         (selectionMoved)="drag.onSelectionMoved($event)"
         (nodeDragEnded)="drag.onDragEnded($event)"
@@ -100,26 +86,113 @@
         (selectionChanged)="onSelectionChanged($event)"
         (selectionRemoved)="onSelectionRemoved($event)"
       />
-
-      @if (selectedNode()) {
-        <div class="node-props-panel">
-          @if (selectedNode()!.type === 'pbi') {
-            <label>Title
-              <input [(ngModel)]="nodeTitle"
-                     (ngModelChange)="applyNodeTitle($event)" />
-            </label>
-          }
-          <label>Color
-            <input type="color" [(ngModel)]="nodeColor"
-                   (ngModelChange)="applyNodeColor($event)" />
-          </label>
-        </div>
-      }
     </div>
 
     @if (editorOpen()) {
       <app-sprint-editor-panel (rebuild)="rebuildSprint()" />
     }
   </div>
+
+  <!-- Details panel — poza diagram-area żeby ng-diagram transform nie psuł `position: fixed`. -->
+  @if (selectedNode(); as sn) {
+    <div class="node-details-panel floating"
+         [class.hidden-until-positioned]="!detailsPanelPos()"
+         [style.left.px]="detailsPanelPos()?.x ?? 0"
+         [style.top.px]="detailsPanelPos()?.y ?? 0">
+      <button class="details-close" (click)="closeDetailsFromTemplate()">×</button>
+
+      @if (sn.type === 'pbi') {
+        <div class="details-header">
+          <span class="details-id" [style.color]="sn.data['color']">
+            #{{ sn.data['displayId'] }}
+          </span>
+          @if (sn.data['isBugType']) { <span class="details-badge bug">🐛 BUG</span> }
+          @if (sn.data['phaseHours']) {
+            <span class="details-badge hours">{{ sn.data['phaseHours'] }}h</span>
+          }
+          @if (sn.data['phaseRole']) {
+            <span class="details-badge role">{{ sn.data['phaseRole'] }}</span>
+          }
+        </div>
+
+        <div class="details-title">{{ sn.data['title'] }}</div>
+
+        @if (sn.data['parentTitle']) {
+          <div class="details-section">
+            <div class="details-label">Parent PBI</div>
+            <div class="details-value">{{ sn.data['parentTitle'] }}</div>
+          </div>
+        }
+
+        <div class="details-row">
+          <div class="details-section">
+            <div class="details-label">Assignee</div>
+            <div class="details-value">{{ assigneeNameForSelected() }}</div>
+          </div>
+          <div class="details-section">
+            <div class="details-label">Days</div>
+            <div class="details-value">D{{ sn.data['startDay'] }} – D{{ sn.data['endDay'] }}</div>
+          </div>
+        </div>
+
+        <div class="details-actions">
+          <a class="details-link"
+             [href]="adoUrlForSelected()"
+             target="_blank" rel="noopener">
+            ↗ Open in ADO
+          </a>
+          <button class="details-link details-copy"
+                  [class.ok]="copyLinkOk()"
+                  (click)="copyAdoLink()">
+            @if (copyLinkOk()) { ✓ Copied } @else { ⧉ Copy link }
+          </button>
+        </div>
+      }
+
+      @if (sn.type === 'qa-task') {
+        <div class="details-header">
+          <span class="details-id" [style.color]="sn.data['color']">
+            #{{ sn.data['pbiId'] }}
+          </span>
+          <span class="details-badge qa">QA</span>
+        </div>
+        @if (sn.data['pbiTitle']) {
+          <div class="details-title">{{ sn.data['pbiTitle'] }}</div>
+        }
+        @if (sn.data['testerName']) {
+          <div class="details-section">
+            <div class="details-label">Tester</div>
+            <div class="details-value">{{ sn.data['testerName'] }}</div>
+          </div>
+        }
+        <div class="details-actions">
+          <a class="details-link"
+             [href]="adoUrlForSelected()"
+             target="_blank" rel="noopener">
+            ↗ Open in ADO
+          </a>
+          <button class="details-link details-copy"
+                  [class.ok]="copyLinkOk()"
+                  (click)="copyAdoLink()">
+            @if (copyLinkOk()) { ✓ Copied } @else { ⧉ Copy link }
+          </button>
+        </div>
+      }
+
+      <details class="details-edit">
+        <summary>Edit</summary>
+        @if (sn.type === 'pbi') {
+          <label>Title
+            <input [(ngModel)]="nodeTitle"
+                   (ngModelChange)="applyNodeTitle($event)" />
+          </label>
+        }
+        <label>Color
+          <input type="color" [(ngModel)]="nodeColor"
+                 (ngModelChange)="applyNodeColor($event)" />
+        </label>
+      </details>
+    </div>
+  }
 
 </div>

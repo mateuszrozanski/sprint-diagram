@@ -6,6 +6,7 @@ import {
   NgDiagramNodeTemplateMap,
   NgDiagramViewportService,
   NgDiagramModelService,
+  NgDiagramSelectionService,
   initializeModel,
   provideNgDiagram,
   type NgDiagramConfig,
@@ -13,6 +14,21 @@ import {
 } from 'ng-diagram';
 
 import type { DiagramNode } from './sprint-data';
+import { setSprintCalendar, SPRINT_START, SPRINT_DAYS } from './sprint-data';
+
+function countWorkingDays(start: Date, finish: Date): number {
+  let count = 0;
+  const d = new Date(start);
+  d.setHours(0, 0, 0, 0);
+  const end = new Date(finish);
+  end.setHours(0, 0, 0, 0);
+  while (d <= end) {
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    d.setDate(d.getDate() + 1);
+  }
+  return count;
+}
 import { buildNodesFromAdo, buildIncomingBugs } from './sprint-ado';
 import { L, getTotalWidth } from './layout';
 import { resolveQaCollisions } from './sprint-utils';
@@ -38,7 +54,8 @@ import { AdoService }                 from './ado.service';
   styleUrl: './app.component.css',
 })
 export class AppComponent implements AfterViewInit {
-  private readonly viewportService = inject(NgDiagramViewportService);
+  private readonly viewportService  = inject(NgDiagramViewportService);
+  private readonly selectionService = inject(NgDiagramSelectionService);
   private readonly modelService    = inject(NgDiagramModelService);
   protected readonly sprint        = inject(SprintService);
   protected readonly dataStore     = inject(SprintDataStoreService);
@@ -46,7 +63,11 @@ export class AppComponent implements AfterViewInit {
   private   readonly adoService    = inject(AdoService);
 
   protected readonly editorOpen   = signal(false);
-  protected readonly selectedNode = signal<DiagramNode | null>(null);
+  protected readonly currentSprint   = signal<{ name: string; startDate: string | null; finishDate: string | null } | null>(null);
+  protected readonly selectedNode    = signal<DiagramNode | null>(null);
+  protected readonly detailsPanelPos = signal<{ x: number; y: number } | null>(null);
+  protected readonly copyLinkOk      = signal(false);
+  private lastClickCoords: { x: number; y: number } | null = null;
   protected readonly nodeTitle    = signal('');
   protected readonly nodeColor    = signal('#6366f1');
 
@@ -66,6 +87,8 @@ export class AppComponent implements AfterViewInit {
     ['handoff', DepEdgeComponent],
     ['qa',      DepEdgeComponent],
   ]);
+
+  readonly testers = signal<{ id: string; name: string }[]>([]);
 
   readonly model = initializeModel({ nodes: this.buildLanes(), edges: [] });
 
@@ -96,14 +119,116 @@ export class AppComponent implements AfterViewInit {
         return {
           ...edge,
           type:   isQa ? 'qa'  : 'dep',
-          zOrder: 20,
+          zOrder: 5,
           data:   { edgeType: isQa ? 'qa' : 'dep' },
         };
       },
     },
   });
 
-  ngAfterViewInit(): void { setTimeout(() => this.fitView(), 100); }
+  ngAfterViewInit(): void {
+    this.restoreFromServer();
+    this.startAutoSave();
+    // Modal-style outside click: klik poza panelem i poza kartą = zamknij.
+    // Capture żeby nie być blokowanym przez stopPropagation w ng-diagram.
+    document.addEventListener('click', this.outsideClickCapture, true);
+  }
+
+  private outsideClickCapture = (e: MouseEvent) => {
+    if (!this.selectedNode()) return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest('.node-details-panel')) return;            // klik w panel → zostaje
+    if (target.closest('.pbi-card, .qa-card, app-pbi-node, app-qa-task')) return;  // klik w kartę → switch obsługuje onSelectionChanged
+    this.closeDetails();
+  };
+
+  private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastSavedJson = '';
+
+  private snapshotState() {
+    return {
+      version:  1,
+      users:    this.dataStore.users(),
+      testers:  this.testers(),
+      sprint:   {
+        startISO: this.sprintStartISO(),
+        days:     this.sprintDays(),
+        iteration: this.currentSprint(),
+      },
+      nodes:    this.modelService.nodes(),
+      edges:    this.modelService.edges(),
+    };
+  }
+
+  private async saveStateToServer(): Promise<void> {
+    const state = this.snapshotState();
+    const json = JSON.stringify(state);
+    if (json === this.lastSavedJson) return;
+    try {
+      const res = await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    json,
+      });
+      if (res.ok) this.lastSavedJson = json;
+    } catch (err) {
+      console.warn('[state] save failed', err);
+    }
+  }
+
+  private startAutoSave(): void {
+    setInterval(() => {
+      if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = setTimeout(() => this.saveStateToServer(), 100);
+    }, 2000);
+  }
+
+  private sprintStartISO(): string {
+    const d = SPRINT_START;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  private sprintDays(): number {
+    return SPRINT_DAYS;
+  }
+
+  private async restoreFromServer(): Promise<void> {
+    try {
+      const res = await fetch('/api/state');
+      if (!res.ok) return;
+      const { state } = await res.json();
+      if (!state || typeof state !== 'object') return;
+
+      if (state.sprint?.startISO && state.sprint?.days) {
+        const [y, m, d] = state.sprint.startISO.split('-').map(Number);
+        setSprintCalendar(new Date(y, m - 1, d), state.sprint.days);
+      }
+      if (state.sprint?.iteration) this.currentSprint.set(state.sprint.iteration);
+      if (Array.isArray(state.users))   this.dataStore.setUsers(state.users);
+      if (Array.isArray(state.testers)) this.testers.set(state.testers);
+      this.rebuildLanes();
+
+      if (Array.isArray(state.nodes) && state.nodes.length) {
+        const laneIds = new Set(
+          (this.modelService.nodes() as DiagramNode[])
+            .filter(n => n.type === 'swimlane')
+            .map(n => n.id),
+        );
+        const restoredNodes = state.nodes.filter((n: any) => !laneIds.has(n.id));
+        const restoredEdges = Array.isArray(state.edges) ? state.edges : [];
+        this.modelService.addNodes(restoredNodes);
+        this.modelService.addEdges(restoredEdges);
+        this.loadedNodeIds = restoredNodes.map((n: any) => n.id);
+        this.loadedEdgeIds = restoredEdges.map((e: any) => e.id);
+        this.sprint.isLoaded.set(true);
+      }
+      this.lastSavedJson = JSON.stringify(this.snapshotState());
+    } catch (err) {
+      console.warn('[state] restore failed', err);
+    }
+  }
+
   fitView(): void {
     this.viewportService.zoomToFit({ padding: 20 });
   }
@@ -111,12 +236,82 @@ export class AppComponent implements AfterViewInit {
   onSelectionChanged(event: any): void {
     const node = event.selectedNodes?.[0] ?? null;
     if (node?.type === 'pbi' || node?.type === 'qa-task') {
+      if (this.selectedNode()?.id === node.id) return;
+      // Wyczyść pozycję — żeby panel był ukryty (visibility:hidden) aż policzymy
+      // nową pozycję, inaczej miga w starym miejscu / fallbacku.
+      this.detailsPanelPos.set(null);
       this.selectedNode.set(node as DiagramNode);
       this.nodeTitle.set((node.data?.['title'] ?? node.data?.['pbiId'] ?? '') as string);
       this.nodeColor.set((node.data?.['color'] ?? '#6366f1') as string);
-    } else {
-      this.selectedNode.set(null);
+      setTimeout(() => this.positionPanelNearNode(node.id), 0);
     }
+    // ng-diagram emituje "cleared" przy każdym mouseup w pustym miejscu — IGNORUJEMY,
+    // żeby panel zostawał aż user kliknie × lub inną kartę.
+  }
+
+  /** Zamknij panel + zdeseleckuj kartę w ng-diagram (żeby kolejny klik znów selekcjonował). */
+  private closeDetails(): void {
+    this.selectedNode.set(null);
+    this.detailsPanelPos.set(null);
+    try { this.selectionService.deselectAll(); } catch {}
+  }
+
+  /** Wrapper dostępny z template (private nie jest widoczny). */
+  protected closeDetailsFromTemplate(): void { this.closeDetails(); }
+
+
+  private positionPanelNearNode(nodeId: string): void {
+    // ng-diagram renderuje nodes z `id` HTML lub `data-node-id`. Próbujemy oba.
+    const el =
+      document.querySelector(`[data-node-id="${nodeId}"]`) ??
+      document.getElementById(nodeId) ??
+      document.querySelector(`[data-id="${nodeId}"]`);
+    if (!el || !(el instanceof HTMLElement)) {
+      this.detailsPanelPos.set({ x: 16, y: 80 });
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const PANEL_W = 340;
+    const PANEL_H_MAX = 420;
+    const margin = 14;
+    // Domyślnie na prawo od karty; jak nie ma miejsca → na lewo; jak też nie → poniżej.
+    let x = rect.right + margin;
+    let y = rect.top;
+    if (x + PANEL_W > window.innerWidth - 12) {
+      x = rect.left - PANEL_W - margin;
+    }
+    if (x < 12) {
+      x = Math.max(12, rect.left);
+      y = rect.bottom + margin;
+    }
+    y = Math.min(Math.max(12, y), window.innerHeight - PANEL_H_MAX - 12);
+    this.detailsPanelPos.set({ x, y });
+  }
+
+  protected copyAdoLink(): void {
+    const url = this.adoUrlForSelected();
+    if (url === '#') return;
+    navigator.clipboard.writeText(url).then(() => {
+      this.copyLinkOk.set(true);
+      setTimeout(() => this.copyLinkOk.set(false), 1500);
+    }).catch(() => {});
+  }
+
+  protected assigneeNameForSelected(): string {
+    const node = this.selectedNode();
+    if (!node) return '';
+    const uid = node.data?.['primaryAssignee'] as string | undefined;
+    if (!uid) return 'Unassigned';
+    return this.dataStore.users().find(u => u.id === uid)?.name ?? uid;
+  }
+
+  protected adoUrlForSelected(): string {
+    const node = this.selectedNode();
+    if (!node) return '#';
+    const id = (node.data?.['displayId'] ?? node.data?.['pbiId']) as string | undefined;
+    if (!id) return '#';
+    // ADO_ORG i ADO_PROJECT są publiczne (są w URL-u team boarda), wystarczy hardkod
+    return `https://dev.azure.com/pwc-us-tax-tech/Mezzanine/_workitems/edit/${id}`;
   }
 
   applyNodeTitle(title: string): void {
@@ -238,11 +433,32 @@ export class AppComponent implements AfterViewInit {
     if (this.sprint.isLoading()) return;
     this.sprint.isLoading.set(true);
 
-    let pbis = this.dataStore.pbis();
+    let pbis    = this.dataStore.pbis();
+    let users   = this.dataStore.users();
+    let testers: { id: string; name: string }[] = this.testers();
 
     if (this.useAdo) {
       try {
-        pbis = await this.adoService.fetchSprintItems(this.dataStore.users());
+        const result = await this.adoService.fetchSprintItems([]);
+        pbis    = result.pbis;
+        users   = result.users;
+        testers = result.testers;
+        this.dataStore.setUsers(users);
+        this.testers.set(testers);
+
+        if (result.iteration?.startDate && result.iteration.finishDate) {
+          const days = countWorkingDays(result.iteration.startDate, result.iteration.finishDate);
+          setSprintCalendar(result.iteration.startDate, days);
+        }
+        if (result.iteration) {
+          this.currentSprint.set({
+            name: result.iteration.name,
+            startDate: result.iteration.startDate ? result.iteration.startDate.toISOString() : null,
+            finishDate: result.iteration.finishDate ? result.iteration.finishDate.toISOString() : null,
+          });
+        }
+
+        this.rebuildLanes();
       } catch (err) {
         console.error('[AdoService] fetch failed, falling back to mock data', err);
       }
@@ -250,7 +466,7 @@ export class AppComponent implements AfterViewInit {
       await new Promise<void>(r => setTimeout(r, 1200));
     }
 
-    const { nodes, edges, assigneeMap, depsMap } = buildNodesFromAdo(pbis, this.dataStore.users());
+    const { nodes, edges, assigneeMap, depsMap } = buildNodesFromAdo(pbis, users, testers);
     this.sprint.applyMaps(assigneeMap, depsMap);
 
     this.loadedNodeIds = nodes.map(n => n.id);
@@ -279,6 +495,10 @@ export class AppComponent implements AfterViewInit {
     this.sprint.isLoaded.set(false);
     this.sprint.loadedStats.set({ stories: 0, bugs: 0, incoming: 0 });
     this.sprint.clearUndo();
+    // Wyczyść też shared state w Redis i ostatni zapisany snapshot, żeby restore
+    // przy następnym otwarciu nie wciągnął starych danych.
+    this.lastSavedJson = '';
+    fetch('/api/state', { method: 'DELETE' }).catch(() => {});
   }
 
   // ── Incoming bug load / reset ─────────────────────────────────────────────
@@ -327,6 +547,15 @@ export class AppComponent implements AfterViewInit {
 
   // ── Lane builder ──────────────────────────────────────────────────────────
 
+  private rebuildLanes(): void {
+    const existing = this.modelService.nodes() as DiagramNode[];
+    const laneIds = existing
+      .filter(n => n.type === 'swimlane')
+      .map(n => n.id);
+    if (laneIds.length) this.modelService.deleteNodes(laneIds);
+    this.modelService.addNodes(this.buildLanes());
+  }
+
   private buildLanes(): DiagramNode[] {
     const totalW = getTotalWidth();
     const users  = this.dataStore.users();
@@ -335,13 +564,22 @@ export class AppComponent implements AfterViewInit {
       id, type: 'swimlane', zOrder: 0, position: { x: 0, y }, data, draggable: false,
     });
 
+    const testers = this.testers();
+    // Jeśli mamy testerów z ADO → po jednej sub-lane per tester. Inaczej fallback do jednej generycznej QA.
+    const qaLanes: DiagramNode[] = testers.length
+      ? testers.map((t, i) =>
+          lane(`lane-${t.id}`, L.HEADER_H + (users.length + 1 + i) * L.ROW_H,
+            { label: `QA · ${t.name}`, width: totalW, height: L.ROW_H, isQA: true }))
+      : [lane('lane-qa', L.HEADER_H + (users.length + 1) * L.ROW_H,
+          { label: 'QA / Testing', width: totalW, height: L.ROW_H, isQA: true })];
+
     return [
-      lane('hdr',           0,                                       { isHeader: true,  width: totalW, height: L.HEADER_H }),
-      lane('lane-incoming', L.HEADER_H,                              { label: '📥 Incoming', width: totalW, height: L.ROW_H, isIncoming: true }),
+      lane('hdr',           0,                                       { isHeader: true,  width: totalW, height: L.HEADER_H, sprintName: this.currentSprint()?.name ?? 'Sprint' }),
+      lane('lane-incoming', L.HEADER_H,                              { label: 'Incoming', width: totalW, height: L.ROW_H, isIncoming: true }),
       ...users.map((user, i) =>
         lane(`lane-${user.id}`, L.HEADER_H + (i + 1) * L.ROW_H,    { label: user.name, width: totalW, height: L.ROW_H })
       ),
-      lane('lane-qa', L.HEADER_H + (users.length + 1) * L.ROW_H,   { label: 'QA / Testing', width: totalW, height: L.ROW_H, isQA: true }),
+      ...qaLanes,
     ];
   }
 }

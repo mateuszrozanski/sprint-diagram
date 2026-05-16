@@ -50,11 +50,11 @@ export function getPbiNonWorkingZones(
 
 export const L = {
   HEADER_H: 68,
-  LABEL_W:  148,
-  ROW_H:    148,
-  DAY_W:    210,
-  WKND_W:   64,
-  NODE_H:   92,
+  LABEL_W:  160,
+  ROW_H:    200,
+  DAY_W:    340,
+  WKND_W:   80,
+  NODE_H:   160,
   PAD:      6,
 };
 
@@ -81,8 +81,9 @@ export function getPbiWidth(pbi: PBI): number {
   return endX - startX - 2 * L.PAD;
 }
 
-export function getQaPosition(pbi: PBI, userCount: number) {
-  const qaRowIndex = userCount + 1; // incoming(0) + devs(1..N) + QA(N+1)
+export function getQaPosition(pbi: PBI, userCount: number, testerSubRow = 0) {
+  // Layout rows: header(0) + incoming(1) + devs(2..N+1) + QA-sub-lanes(N+2..)
+  const qaRowIndex = userCount + 1 + testerSubRow;
   return {
     x: L.LABEL_W + getSprintDayOffset(pbi.endDay) + L.PAD,
     y: L.HEADER_H + qaRowIndex * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),

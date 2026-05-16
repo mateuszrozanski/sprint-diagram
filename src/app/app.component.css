@@ -162,6 +162,14 @@ ng-diagram    { width: 100%; height: 100%; }
 .audit-what { font-size: 12px; color: #ddd; margin-top: 2px; }
 .audit-card { color: #93c5fd; font-weight: 600; }
 
+.drag-preview-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #1e1e1e; border: 1px solid #0078d4; border-radius: 6px;
+  padding: 8px 14px; color: #fff; font-size: 12px; z-index: 1000;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4); pointer-events: none;
+}
+.drag-preview-toast .cascade { color: #fbbf24; font-weight: 600; }
+
 /* ── New bugs banner ──────────────────────────────────────────────────────── */
 .new-bugs-banner {
   background: rgba(239, 68, 68, 0.15); border-bottom: 1px solid rgba(239, 68, 68, 0.4);

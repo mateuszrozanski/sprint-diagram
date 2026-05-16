@@ -203,6 +203,17 @@
     }
   </div>
 
+  <!-- Drag preview overlay -->
+  @if (drag.dragPreview.active && drag.dragPreview.dx !== 0) {
+    <div class="drag-preview-toast">
+      <strong>{{ drag.dragPreview.draggedTitle }}</strong>
+      moved {{ daysFromDx(drag.dragPreview.dx) }}d
+      @if (drag.dragPreview.cascadingCount > 0) {
+        · <span class="cascade">cascading {{ drag.dragPreview.cascadingCount }} dependent</span>
+      }
+    </div>
+  }
+
   <!-- Details panel — poza diagram-area żeby ng-diagram transform nie psuł `position: fixed`. -->
   @if (selectedNode(); as sn) {
     <div class="node-details-panel floating"

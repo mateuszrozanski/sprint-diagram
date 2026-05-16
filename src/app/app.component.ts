@@ -354,6 +354,12 @@ export class AppComponent implements AfterViewInit {
     this.onlyBlocked.set(!this.onlyBlocked());
     this.applyFiltersToNodes();
   }
+  protected daysFromDx(dx: number): string {
+    const days = dx / L.DAY_W;
+    const sign = days > 0 ? '+' : '';
+    return `${sign}${days.toFixed(1)}`;
+  }
+
   protected initialsOf(name: string): string {
     return name.split(' ').map(p => p[0]).filter(Boolean).join('').toUpperCase().slice(0, 2);
   }

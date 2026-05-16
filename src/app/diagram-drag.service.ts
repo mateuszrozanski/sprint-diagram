@@ -28,6 +28,9 @@ export class DiagramDragService {
    */
   updating = false;
 
+  /** Live preview podczas drag — pokazuje ile dni przesunięcia. */
+  dragPreview = { active: false, dx: 0, cascadingCount: 0, draggedTitle: '' };
+
   private allNodes()           { return this.modelService.nodes() as DiagramNode[]; }
   private nodeById(id: string) { return this.modelService.getNodeById(id) as DiagramNode | null; }
   private users()              { return this.dataStore.users(); }
@@ -43,6 +46,15 @@ export class DiagramDragService {
     }
     this.activeDragIds = event.nodes.filter(n => n.type === 'pbi').map(n => n.id);
     this.cascadeIds    = transitiveDependents(this.activeDragIds, this.sprint.liveDeps);
+
+    const draggedFirst = event.nodes.find(n => n.type === 'pbi');
+    const draggedNode  = draggedFirst ? this.nodeById(draggedFirst.id) : null;
+    this.dragPreview = {
+      active: true,
+      dx: 0,
+      cascadingCount: this.cascadeIds.size,
+      draggedTitle: (draggedNode?.data?.['title'] as string) ?? draggedFirst?.id ?? '',
+    };
   }
 
   // ── 2. During drag: cascade dx to dependents ───────────────────────────────
@@ -59,6 +71,7 @@ export class DiagramDragService {
 
     const dx = movedPbis[0].position.x - origin.x;
     if (dx === 0) return;
+    this.dragPreview.dx = dx;
 
     const updates: NodeUpdate[] = [];
     const movedQaIds = new Set<string>();
@@ -152,6 +165,7 @@ export class DiagramDragService {
       this.modelService.updateNodes(updates);
       this.updating = false;
     }
+    this.dragPreview = { active: false, dx: 0, cascadingCount: 0, draggedTitle: '' };
   }
 
   // ── Undo ──────────────────────────────────────────────────────────────────

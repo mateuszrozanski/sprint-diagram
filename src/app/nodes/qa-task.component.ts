@@ -1,7 +1,8 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { NgDiagramNodeTemplate, NgDiagramPortComponent } from 'ng-diagram';
 import { CALENDAR_SLOTS } from '../sprint-data';
 import { getEffectiveQaWidth } from '../layout';
+import { UiBusService } from '../ui-bus.service';
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -14,6 +15,12 @@ const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','
 })
 export class QaTaskComponent implements NgDiagramNodeTemplate {
   node = input.required<any>();
+  private readonly uiBus = inject(UiBusService);
+
+  protected openDetails(e: MouseEvent): void {
+    e.stopPropagation();
+    this.uiBus.openDetailsForNode.set(this.node());
+  }
 
   protected color  = computed(() => this.node().data['color'] as string);
   protected height = computed(() => this.node().data['height'] as number);

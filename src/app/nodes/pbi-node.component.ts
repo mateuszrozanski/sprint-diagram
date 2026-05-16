@@ -6,6 +6,7 @@ import { L, getPbiNonWorkingZones, getEffectivePbiWidth, skipNonWorkingX } from 
 import { transitiveDependents, resolveCollisions, syncQaNodes, resolveQaCollisions } from '../sprint-utils';
 import { SprintService } from '../sprint.service';
 import { SprintDataStoreService } from '../sprint-data-store.service';
+import { UiBusService } from '../ui-bus.service';
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -27,6 +28,13 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
   private readonly elRef           = inject(ElementRef);
   private readonly sprint          = inject(SprintService);
   private readonly dataStore       = inject(SprintDataStoreService);
+  private readonly uiBus           = inject(UiBusService);
+
+  /** Otwiera details panel dla tej karty (wywołane z przycisku ⓘ). */
+  protected openDetails(e: MouseEvent): void {
+    e.stopPropagation();
+    this.uiBus.openDetailsForNode.set(this.node());
+  }
 
   protected color     = computed(() => this.node().data['color']    as string);
   protected height    = computed(() => this.node().data['height']   as number);

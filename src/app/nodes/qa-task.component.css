@@ -50,6 +50,13 @@
   max-width: 80px;
 }
 
+.info-btn-qa {
+  background: transparent; border: none; color: #888; cursor: pointer;
+  font-size: 13px; padding: 0 3px; border-radius: 50%; width: 20px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.info-btn-qa:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
 .qa-title {
   font-size: 10px; color: #aaa; line-height: 1.25;
   margin-top: 2px;

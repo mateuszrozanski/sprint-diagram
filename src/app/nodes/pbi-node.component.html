@@ -32,6 +32,10 @@
                 [title]="userName(uid)">{{ initials(uid) }}</span>
         }
       </div>
+      <button class="info-btn"
+              (pointerdown)="$event.stopPropagation()"
+              (click)="openDetails($event)"
+              title="Details">ⓘ</button>
     </div>
 
     <!-- Title -->

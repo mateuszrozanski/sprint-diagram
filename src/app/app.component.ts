@@ -42,6 +42,8 @@ import { SprintDataStoreService }     from './sprint-data-store.service';
 import { SprintEditorPanelComponent } from './editor/sprint-editor-panel.component';
 import { DiagramDragService }         from './diagram-drag.service';
 import { AdoService }                 from './ado.service';
+import { UiBusService }                from './ui-bus.service';
+import { effect }                       from '@angular/core';
 
 @Component({
   selector: 'app-root',
@@ -61,6 +63,20 @@ export class AppComponent implements AfterViewInit {
   protected readonly dataStore     = inject(SprintDataStoreService);
   protected readonly drag          = inject(DiagramDragService);
   private   readonly adoService    = inject(AdoService);
+  private   readonly uiBus         = inject(UiBusService);
+
+  // Reagujemy na żądanie z karty (przycisk ⓘ) — otwieramy details panel.
+  private readonly _openDetailsEffect = effect(() => {
+    const node = this.uiBus.openDetailsForNode();
+    if (!node) return;
+    this.selectedNode.set(node as DiagramNode);
+    this.nodeTitle.set((node.data?.['title'] ?? node.data?.['pbiId'] ?? '') as string);
+    this.nodeColor.set((node.data?.['color'] ?? '#6366f1') as string);
+    this.detailsPanelPos.set(null);
+    setTimeout(() => this.positionPanelNearNode(node.id), 0);
+    // Reset signal żeby ten sam node mógł być re-openowany.
+    setTimeout(() => this.uiBus.openDetailsForNode.set(null), 50);
+  });
 
   protected readonly editorOpen   = signal(false);
   protected readonly currentSprint   = signal<{ name: string; startDate: string | null; finishDate: string | null } | null>(null);
@@ -746,20 +762,9 @@ export class AppComponent implements AfterViewInit {
     this.viewportService.zoomToFit({ padding: 20 });
   }
 
-  onSelectionChanged(event: any): void {
-    const node = event.selectedNodes?.[0] ?? null;
-    if (node?.type === 'pbi' || node?.type === 'qa-task') {
-      if (this.selectedNode()?.id === node.id) return;
-      // Wyczyść pozycję — żeby panel był ukryty (visibility:hidden) aż policzymy
-      // nową pozycję, inaczej miga w starym miejscu / fallbacku.
-      this.detailsPanelPos.set(null);
-      this.selectedNode.set(node as DiagramNode);
-      this.nodeTitle.set((node.data?.['title'] ?? node.data?.['pbiId'] ?? '') as string);
-      this.nodeColor.set((node.data?.['color'] ?? '#6366f1') as string);
-      setTimeout(() => this.positionPanelNearNode(node.id), 0);
-    }
-    // ng-diagram emituje "cleared" przy każdym mouseup w pustym miejscu — IGNORUJEMY,
-    // żeby panel zostawał aż user kliknie × lub inną kartę.
+  onSelectionChanged(_event: any): void {
+    // Click w kartę = tylko selekcja w ng-diagram (potrzebne do dragu).
+    // Details panel otwiera tylko przycisk ⓘ na karcie (przez UiBusService).
   }
 
   /** Zamknij panel + zdeseleckuj kartę w ng-diagram (żeby kolejny klik znów selekcjonował). */

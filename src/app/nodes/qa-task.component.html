@@ -10,6 +10,10 @@
       @if (node().data['testerName']) {
         <span class="qa-tester" [title]="node().data['testerName']">{{ node().data['testerName'] }}</span>
       }
+      <button class="info-btn-qa"
+              (pointerdown)="$event.stopPropagation()"
+              (click)="openDetails($event)"
+              title="Details">ⓘ</button>
     </div>
     @if (node().data['pbiTitle']) {
       <div class="qa-title" [title]="node().data['pbiTitle']">{{ node().data['pbiTitle'] }}</div>

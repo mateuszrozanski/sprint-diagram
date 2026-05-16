@@ -37,13 +37,20 @@
 
     <div class="topbar-right">
       @if (sprint.isLoaded()) {
-        <div class="info-chip"><span class="info-dot dep-dot"></span>Dependency</div>
-        <div class="info-chip"><span class="info-dot handoff-dot"></span>Handoff</div>
-        <div class="info-chip"><span class="info-dot qa-dot"></span>QA</div>
+        <div class="mode-indicator" [class.whatif]="!isLive()">
+          @if (isLive()) { 🟢 Live } @else { 🔮 What-if }
+        </div>
         <div class="divider"></div>
 
         @if (sprint.undoLabel()) {
           <button class="btn-undo" (click)="drag.undoAssignment()">↩ Undo: {{ sprint.undoLabel() }}</button>
+        }
+
+        @if (isLive()) {
+          <button class="btn-load" (click)="startWhatIf()">🔮 Start what-if</button>
+        } @else {
+          <button class="btn-load" (click)="saveCurrentScenario()">💾 Save scenario</button>
+          <button class="btn-reset" (click)="backToLive()">← Back to live</button>
         }
 
         <button class="btn-load"
@@ -52,7 +59,7 @@
                 (click)="loadFromAdo()">
           @if (sprint.isLoading()) { ⏳ Loading… } @else { 🔄 Reload from ADO }
         </button>
-        <button class="btn-reset" (click)="resetDiagram()">↺ Reset</button>
+        <button class="btn-ado" (click)="toggleScenarios()" title="Zapisane scenariusze">📁 Scenarios</button>
         <button class="btn-ado"
                 [class.active]="showDiff()"
                 (click)="toggleDiff()"
@@ -189,7 +196,7 @@
         [config]="diagramConfig()"
         [nodeTemplateMap]="nodeTemplateMap"
         [edgeTemplateMap]="edgeTemplateMap"
-        (nodeDragStarted)="drag.onDragStarted($event)"
+        (nodeDragStarted)="onNodeDragStarted($event)"
         (selectionMoved)="drag.onSelectionMoved($event)"
         (nodeDragEnded)="drag.onDragEnded($event)"
         (edgeDrawn)="onEdgeDrawn($event)"
@@ -202,6 +209,33 @@
       <app-sprint-editor-panel (rebuild)="rebuildSprint()" />
     }
   </div>
+
+  <!-- What-if mode banner -->
+  @if (!isLive()) {
+    <div class="whatif-banner">
+      🔮 <strong>What-if scenario</strong> · local edits only — ADO won't be touched.
+      <button class="banner-action" (click)="backToLive()">← Back to live</button>
+      <button class="banner-dismiss" (click)="saveCurrentScenario()">💾 Save scenario</button>
+    </div>
+  }
+
+  <!-- Scenarios dropdown -->
+  @if (showScenarios()) {
+    <div class="snapshot-panel">
+      <strong>📁 Saved scenarios</strong>
+      @if (scenarios().length === 0) {
+        <div class="snapshot-empty">Brak zapisanych scenariuszy.</div>
+      }
+      <div class="snapshot-list">
+        @for (s of scenarios(); track s) {
+          <div class="scenario-row">
+            <button class="snapshot-item" (click)="loadScenario(s)">{{ s }}</button>
+            <button class="snapshot-delete" (click)="deleteScenario(s)" title="Usuń scenariusz">✕</button>
+          </div>
+        }
+      </div>
+    </div>
+  }
 
   <!-- Drag preview overlay -->
   @if (drag.dragPreview.active && drag.dragPreview.dx !== 0) {

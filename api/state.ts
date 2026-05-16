@@ -6,17 +6,24 @@ const redis = new Redis({
   token: process.env['KV_REST_API_TOKEN'] ?? '',
 });
 
-const KEY_PREFIX = 'sprint-board:';
-const DEFAULT_BOARD = 'current';
-const SNAPSHOT_PREFIX = 'sprint-snapshot:';
+const LIVE_KEY      = 'sprint-board:live';
+const WHATIF_KEY    = 'sprint-board:whatif';
+const SCENARIO_PFX  = 'sprint-scenario:';
+const SNAPSHOT_PFX  = 'sprint-snapshot:';
 
-function keyFor(req: VercelRequest): string {
-  const board = String(req.query['board'] ?? DEFAULT_BOARD).slice(0, 64);
-  return KEY_PREFIX + (board || DEFAULT_BOARD);
-}
+const WHATIF_TTL_SEC = 4 * 60 * 60;          // 4h auto-reset
+const SCENARIO_TTL   = 60 * 60 * 24 * 30;    // 30d
+const SNAPSHOT_TTL   = 60 * 60 * 24 * 30;
 
 function isoDate(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function badName(name: string): string | null {
+  if (!name) return 'empty';
+  if (name.length > 64) return 'too long';
+  if (!/^[a-zA-Z0-9 _-]+$/.test(name)) return 'invalid chars';
+  return null;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -24,61 +31,105 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'KV not configured' });
   }
 
-  const key = keyFor(req);
+  const url = new URL(req.url ?? '', 'http://x');
+  const mode = url.searchParams.get('mode');                // 'live' | 'whatif'
+  const snapshot = url.searchParams.get('snapshot');        // YYYY-MM-DD → snapshot read
+  const scenariosList = url.searchParams.get('scenarios');  // 'list'
+  const scenario = url.searchParams.get('scenario');        // <name>
+  const saveScenarioAs = url.searchParams.get('save-scenario'); // <name>
 
   try {
+    // ── GET ────────────────────────────────────────────────────────────────
     if (req.method === 'GET') {
-      const url = new URL(req.url ?? '', 'http://x');
-      const snapshotDate = url.searchParams.get('snapshot');
-      if (snapshotDate) {
-        const snap = await redis.get(SNAPSHOT_PREFIX + snapshotDate);
-        return res.status(200).json({ state: snap ?? null, snapshotDate });
+      if (snapshot) {
+        const snap = await redis.get(SNAPSHOT_PFX + snapshot);
+        return res.status(200).json({ state: snap ?? null, snapshotDate: snapshot });
       }
-      const data = await redis.get(key);
-      return res.status(200).json({ state: data ?? null });
+      if (scenariosList === 'list') {
+        // skanujemy wszystkie scenario keys
+        const keys: string[] = [];
+        let cursor = 0;
+        for (let i = 0; i < 10; i++) {
+          const [nextCursor, batch] = await redis.scan(cursor, { match: SCENARIO_PFX + '*', count: 100 });
+          for (const k of batch as string[]) keys.push(k.replace(SCENARIO_PFX, ''));
+          cursor = Number(nextCursor);
+          if (!cursor) break;
+        }
+        return res.status(200).json({ scenarios: keys.sort() });
+      }
+      if (scenario) {
+        const data = await redis.get(SCENARIO_PFX + scenario);
+        return res.status(200).json({ state: data ?? null, scenario });
+      }
+      if (url.searchParams.get('snapshots') === 'list') {
+        const days: string[] = [];
+        const now = new Date();
+        for (let i = 0; i < 30; i++) {
+          const d = new Date(now);
+          d.setDate(d.getDate() - i);
+          const k = SNAPSHOT_PFX + isoDate(d);
+          if (await redis.exists(k)) days.push(isoDate(d));
+        }
+        return res.status(200).json({ days });
+      }
+
+      // Default: zwróć cały stan { live, whatif, whatifAge }
+      const live = await redis.get(LIVE_KEY);
+      const whatif = await redis.get<any>(WHATIF_KEY);
+      let whatifAgeSec: number | null = null;
+      if (whatif?.updatedAt) {
+        whatifAgeSec = Math.round((Date.now() - new Date(whatif.updatedAt).getTime()) / 1000);
+      }
+      return res.status(200).json({ live: live ?? null, whatif: whatif ?? null, whatifAgeSec });
     }
 
-    if (req.method === 'POST' || req.method === 'PUT') {
+    // ── POST ───────────────────────────────────────────────────────────────
+    if (req.method === 'POST') {
       const body = req.body;
-      if (!body || typeof body !== 'object') {
-        return res.status(400).json({ error: 'Body must be a JSON object' });
-      }
+      if (!body || typeof body !== 'object') return res.status(400).json({ error: 'bad body' });
       const payload = { ...body, updatedAt: new Date().toISOString() };
       const json = JSON.stringify(payload);
-      if (json.length > 1_000_000) {
-        return res.status(413).json({ error: 'State too large (>1MB)' });
-      }
-      await redis.set(key, payload);
+      if (json.length > 1_000_000) return res.status(413).json({ error: 'State too large (>1MB)' });
 
-      // Daily snapshot — pierwszy POST danego dnia tworzy snapshot pod sprint-snapshot:YYYY-MM-DD.
-      // Snapshoty trzymamy 30 dni (EX 2592000s).
+      if (saveScenarioAs) {
+        const err = badName(saveScenarioAs);
+        if (err) return res.status(400).json({ error: 'Bad scenario name: ' + err });
+        await redis.set(SCENARIO_PFX + saveScenarioAs, payload, { ex: SCENARIO_TTL });
+        return res.status(200).json({ ok: true, scenario: saveScenarioAs });
+      }
+
+      if (mode === 'whatif') {
+        await redis.set(WHATIF_KEY, payload, { ex: WHATIF_TTL_SEC });
+        return res.status(200).json({ ok: true, updatedAt: payload.updatedAt });
+      }
+
+      // Default = 'live' (Load from ADO writes here)
+      await redis.set(LIVE_KEY, payload);
+
+      // Daily snapshot (pierwszy POST danego dnia)
       const today = isoDate();
-      const snapKey = SNAPSHOT_PREFIX + today;
-      const existing = await redis.get(snapKey);
-      if (!existing) {
-        await redis.set(snapKey, payload, { ex: 60 * 60 * 24 * 30 });
+      const snapKey = SNAPSHOT_PFX + today;
+      if (!(await redis.exists(snapKey))) {
+        await redis.set(snapKey, payload, { ex: SNAPSHOT_TTL });
       }
-
       return res.status(200).json({ ok: true, updatedAt: payload.updatedAt });
     }
 
-    // GET /api/state?snapshots=list → ostatnie 14 dni dostępnych snapshotów
-    if (req.method === 'GET' && new URL(req.url ?? '', 'http://x').searchParams.get('snapshots') === 'list') {
-      // Iterate przez ostatnie 30 dni i sprawdzaj które istnieją
-      const days: string[] = [];
-      const now = new Date();
-      for (let i = 0; i < 30; i++) {
-        const d = new Date(now);
-        d.setDate(d.getDate() - i);
-        const key2 = SNAPSHOT_PREFIX + isoDate(d);
-        const exists = await redis.exists(key2);
-        if (exists) days.push(isoDate(d));
-      }
-      return res.status(200).json({ days });
-    }
-
+    // ── DELETE ─────────────────────────────────────────────────────────────
     if (req.method === 'DELETE') {
-      await redis.del(key);
+      if (scenario) {
+        const err = badName(scenario);
+        if (err) return res.status(400).json({ error: 'Bad scenario name: ' + err });
+        await redis.del(SCENARIO_PFX + scenario);
+        return res.status(200).json({ ok: true, scenario });
+      }
+      if (mode === 'whatif') {
+        await redis.del(WHATIF_KEY);
+        return res.status(200).json({ ok: true });
+      }
+      // Old behavior — pełny reset (live + whatif)
+      await redis.del(LIVE_KEY);
+      await redis.del(WHATIF_KEY);
       return res.status(200).json({ ok: true });
     }
 

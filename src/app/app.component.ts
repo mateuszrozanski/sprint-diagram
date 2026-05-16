@@ -66,6 +66,134 @@ export class AppComponent implements AfterViewInit {
   protected readonly currentSprint   = signal<{ name: string; startDate: string | null; finishDate: string | null } | null>(null);
   protected readonly selectedNode    = signal<DiagramNode | null>(null);
 
+  // ── Mode (Live vs What-if) ──────────────────────────────────────────────────
+  protected readonly mode            = signal<'live' | 'whatif'>('live');
+  protected readonly whatifAgeMin    = signal<number | null>(null);
+  protected readonly scenarios       = signal<string[]>([]);
+  protected readonly showScenarios   = signal(false);
+  protected readonly liveStateCache  = signal<any | null>(null);
+
+  protected isLive(): boolean { return this.mode() === 'live'; }
+
+  protected async startWhatIf(): Promise<void> {
+    this.mode.set('whatif');
+    this.logAudit('Started what-if scenario');
+  }
+
+  protected async backToLive(): Promise<void> {
+    if (!confirm('Discard local changes and return to ADO live data?')) return;
+    try {
+      await fetch('/api/state?mode=whatif', { method: 'DELETE' });
+    } catch {}
+    this.mode.set('live');
+    await this.restoreFromServer();
+    this.logAudit('Back to live ADO state');
+  }
+
+  protected async saveCurrentScenario(): Promise<void> {
+    const name = prompt('Nazwa scenariusza (a-z, 0-9, -, _, space, max 64 znaki):');
+    if (!name) return;
+    const cleaned = name.trim().replace(/[^a-zA-Z0-9 _-]/g, '');
+    if (!cleaned) { alert('Nieprawidłowa nazwa'); return; }
+    const state = this.snapshotState();
+    try {
+      const res = await fetch(`/api/state?save-scenario=${encodeURIComponent(cleaned)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      });
+      if (res.ok) {
+        this.logAudit(`Saved scenario: ${cleaned}`);
+        await this.refreshScenarioList();
+        alert(`Zapisano scenariusz: ${cleaned}`);
+      }
+    } catch (err) {
+      console.warn('[scenario save] failed', err);
+    }
+  }
+
+  protected async refreshScenarioList(): Promise<void> {
+    try {
+      const res = await fetch('/api/state?scenarios=list');
+      const { scenarios } = await res.json();
+      this.scenarios.set(scenarios ?? []);
+    } catch {}
+  }
+
+  protected async toggleScenarios(): Promise<void> {
+    const showing = !this.showScenarios();
+    this.showScenarios.set(showing);
+    if (showing) await this.refreshScenarioList();
+  }
+
+  protected async loadScenario(name: string): Promise<void> {
+    try {
+      const res = await fetch(`/api/state?scenario=${encodeURIComponent(name)}`);
+      const { state } = await res.json();
+      if (!state) { alert('Scenariusz nieznaleziony'); return; }
+      this.mode.set('whatif');
+      await this.applyStateToBoard(state);
+      this.showScenarios.set(false);
+      this.logAudit(`Loaded scenario: ${name}`);
+    } catch {}
+  }
+
+  protected async deleteScenario(name: string): Promise<void> {
+    if (!confirm(`Usunąć scenariusz "${name}"?`)) return;
+    try {
+      await fetch(`/api/state?scenario=${encodeURIComponent(name)}`, { method: 'DELETE' });
+      await this.refreshScenarioList();
+      this.logAudit(`Deleted scenario: ${name}`);
+    } catch {}
+  }
+
+  private async applyStateToBoard(state: any): Promise<void> {
+    const laneIds = new Set(
+      (this.modelService.nodes() as DiagramNode[]).filter(n => n.type === 'swimlane').map(n => n.id),
+    );
+    if (this.loadedNodeIds.length) this.modelService.deleteNodes(this.loadedNodeIds);
+    if (this.loadedEdgeIds.length) this.modelService.deleteEdges(this.loadedEdgeIds);
+    if (Array.isArray(state.users))   this.dataStore.setUsers(state.users);
+    if (Array.isArray(state.testers)) this.testers.set(state.testers);
+    if (state.sprint?.startISO && state.sprint?.days) {
+      const [y, m, d2] = state.sprint.startISO.split('-').map(Number);
+      setSprintCalendar(new Date(y, m - 1, d2), state.sprint.days);
+    }
+    if (state.sprint?.iteration) this.currentSprint.set(state.sprint.iteration);
+    this.rebuildLanes();
+    const restoredNodes = (state.nodes ?? []).filter((n: any) => !laneIds.has(n.id));
+    const restoredEdges = state.edges ?? [];
+    this.modelService.addNodes(restoredNodes);
+    this.modelService.addEdges(restoredEdges);
+    this.loadedNodeIds = restoredNodes.map((n: any) => n.id);
+    this.loadedEdgeIds = restoredEdges.map((e: any) => e.id);
+    this.applyCommentBadgesToNodes();
+    this.markWhatIfDiff();
+    this.sprint.isLoaded.set(true);
+  }
+
+  /** Po what-if loadzie — porównanie do liveStateCache i oznaczenie diffów. */
+  private markWhatIfDiff(): void {
+    const live = this.liveStateCache();
+    if (!live?.nodes) return;
+    const livePosMap = new Map<string, any>();
+    for (const n of live.nodes) livePosMap.set(n.id, n);
+    const updates: NodeUpdate[] = [];
+    for (const n of this.modelService.nodes() as DiagramNode[]) {
+      if (n.type !== 'pbi' && n.type !== 'qa-task') continue;
+      const liveNode = livePosMap.get(n.id);
+      if (!liveNode) continue;
+      const movedX = Math.abs((n.position.x ?? 0) - (liveNode.position?.x ?? 0)) > 1;
+      const movedY = Math.abs((n.position.y ?? 0) - (liveNode.position?.y ?? 0)) > 1;
+      const resized = (n.data?.['width'] ?? 0) !== (liveNode.data?.['width'] ?? 0);
+      const isModified = movedX || movedY || resized;
+      if (!!n.data?.['whatifModified'] !== isModified) {
+        updates.push({ id: n.id, data: { ...n.data, whatifModified: isModified } });
+      }
+    }
+    if (updates.length) this.modelService.updateNodes(updates);
+  }
+
   // ── Audit log ───────────────────────────────────────────────────────────────
   protected readonly auditEntries = signal<{ ts: string; who: string; what: string; cardId?: string }[]>([]);
   protected readonly showAudit    = signal(false);
@@ -229,6 +357,15 @@ export class AppComponent implements AfterViewInit {
     this.bugPollTimer = setInterval(() => this.checkForNewBugs(), 5 * 60 * 1000);
   }
 
+  private startAdoAutoRefresh(): void {
+    // Co 10 min w tle: tylko jak jesteśmy w live mode i są dane.
+    setInterval(() => {
+      if (this.isLive() && this.sprint.isLoaded()) {
+        this.loadFromAdo().catch(() => {});
+      }
+    }, 10 * 60 * 1000);
+  }
+
   private async checkForNewBugs(): Promise<void> {
     if (!this.sprint.isLoaded()) return;
     try {
@@ -354,6 +491,16 @@ export class AppComponent implements AfterViewInit {
     this.onlyBlocked.set(!this.onlyBlocked());
     this.applyFiltersToNodes();
   }
+  protected async onNodeDragStarted(event: any): Promise<void> {
+    if (this.isLive()) {
+      // Live mode = read-only. Drag jest blokowany przez automatyczny exit-what-if,
+      // ale żeby drag w ogóle ruszył w ng-diagram, musimy przejść w what-if mode
+      // PRZED tym dragiem. UX: pierwszy drag automatycznie wchodzi w what-if.
+      this.mode.set('whatif');
+    }
+    this.drag.onDragStarted(event);
+  }
+
   protected daysFromDx(dx: number): string {
     const days = dx / L.DAY_W;
     const sign = days > 0 ? '+' : '';
@@ -503,6 +650,7 @@ export class AppComponent implements AfterViewInit {
     this.restoreFromServer();
     this.startAutoSave();
     this.startBugPolling();
+    this.startAdoAutoRefresh();
     this.loadComments();
     document.addEventListener('click', this.outsideClickCapture, true);
   }
@@ -535,16 +683,21 @@ export class AppComponent implements AfterViewInit {
   }
 
   private async saveStateToServer(): Promise<void> {
+    // W LIVE mode nic nie zapisujemy — live to read-only copy ADO.
+    if (this.isLive()) return;
     const state = this.snapshotState();
     const json = JSON.stringify(state);
     if (json === this.lastSavedJson) return;
     try {
-      const res = await fetch('/api/state', {
+      const res = await fetch('/api/state?mode=whatif', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    json,
       });
-      if (res.ok) this.lastSavedJson = json;
+      if (res.ok) {
+        this.lastSavedJson = json;
+        this.markWhatIfDiff();
+      }
     } catch (err) {
       console.warn('[state] save failed', err);
     }
@@ -570,32 +723,19 @@ export class AppComponent implements AfterViewInit {
     try {
       const res = await fetch('/api/state');
       if (!res.ok) return;
-      const { state } = await res.json();
-      if (!state || typeof state !== 'object') return;
+      const { live, whatif, whatifAgeSec } = await res.json();
+      if (!live) return;
 
-      if (state.sprint?.startISO && state.sprint?.days) {
-        const [y, m, d] = state.sprint.startISO.split('-').map(Number);
-        setSprintCalendar(new Date(y, m - 1, d), state.sprint.days);
-      }
-      if (state.sprint?.iteration) this.currentSprint.set(state.sprint.iteration);
-      if (Array.isArray(state.users))   this.dataStore.setUsers(state.users);
-      if (Array.isArray(state.testers)) this.testers.set(state.testers);
-      this.rebuildLanes();
+      this.liveStateCache.set(live);
 
-      if (Array.isArray(state.nodes) && state.nodes.length) {
-        const laneIds = new Set(
-          (this.modelService.nodes() as DiagramNode[])
-            .filter(n => n.type === 'swimlane')
-            .map(n => n.id),
-        );
-        const restoredNodes = state.nodes.filter((n: any) => !laneIds.has(n.id));
-        const restoredEdges = Array.isArray(state.edges) ? state.edges : [];
-        this.modelService.addNodes(restoredNodes);
-        this.modelService.addEdges(restoredEdges);
-        this.loadedNodeIds = restoredNodes.map((n: any) => n.id);
-        this.loadedEdgeIds = restoredEdges.map((e: any) => e.id);
-        this.sprint.isLoaded.set(true);
-      }
+      // What-if jest świeży (<4h)? Załaduj go i ustaw mode='whatif'.
+      // Inaczej: ignoruj stary what-if, ładuj live, mode='live'.
+      const useWhatIf = whatif && whatifAgeSec !== null && whatifAgeSec < 4 * 60 * 60;
+      const stateToApply = useWhatIf ? whatif : live;
+      this.mode.set(useWhatIf ? 'whatif' : 'live');
+      this.whatifAgeMin.set(whatifAgeSec !== null ? Math.round(whatifAgeSec / 60) : null);
+
+      await this.applyStateToBoard(stateToApply);
       this.lastSavedJson = JSON.stringify(this.snapshotState());
     } catch (err) {
       console.warn('[state] restore failed', err);
@@ -835,6 +975,10 @@ export class AppComponent implements AfterViewInit {
         this.knownPbiIds = new Set(pbis.map(p => p.id));
         this.newBugsCount.set(0);
         this.logAudit(`Reloaded from ADO — ${pbis.length} work items`);
+        // Reload = wracamy do LIVE mode i zapisujemy świeży ADO state jako live.
+        this.mode.set('live');
+        // Usuwamy starszy what-if (był relevantny dla poprzedniego ADO state).
+        try { await fetch('/api/state?mode=whatif', { method: 'DELETE' }); } catch {}
 
         if (result.iteration?.startDate && result.iteration.finishDate) {
           const days = countWorkingDays(result.iteration.startDate, result.iteration.finishDate);
@@ -873,6 +1017,18 @@ export class AppComponent implements AfterViewInit {
 
     this.sprint.isLoading.set(false);
     this.sprint.isLoaded.set(true);
+
+    // Po wczytaniu z ADO — zapisz świeży state jako LIVE (źródło prawdy).
+    if (this.mode() === 'live') {
+      const fresh = this.snapshotState();
+      this.liveStateCache.set(fresh);
+      this.lastSavedJson = JSON.stringify(fresh);
+      fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(fresh),
+      }).catch(err => console.warn('[state] live save failed', err));
+    }
   }
 
   resetDiagram(): void {

@@ -66,6 +66,158 @@ export class AppComponent implements AfterViewInit {
   protected readonly currentSprint   = signal<{ name: string; startDate: string | null; finishDate: string | null } | null>(null);
   protected readonly selectedNode    = signal<DiagramNode | null>(null);
 
+  // ── Audit log ───────────────────────────────────────────────────────────────
+  protected readonly auditEntries = signal<{ ts: string; who: string; what: string; cardId?: string }[]>([]);
+  protected readonly showAudit    = signal(false);
+
+  protected async toggleAuditLog(): Promise<void> {
+    const showing = !this.showAudit();
+    this.showAudit.set(showing);
+    if (showing) {
+      try {
+        const res = await fetch('/api/audit');
+        const { entries } = await res.json();
+        this.auditEntries.set(entries ?? []);
+      } catch {}
+    }
+  }
+
+  private logAudit(what: string, cardId?: string, before?: string, after?: string): void {
+    // Fire and forget — nie blokujemy UI.
+    fetch('/api/audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ who: localStorage.getItem('sprint_who') ?? 'anon', what, cardId, before, after }),
+    }).catch(() => {});
+  }
+
+  /** Pozwala useremu wpisać swoje imię raz na browser (gdzieś w details panelu lub topbarze). */
+  protected setMyName(name: string): void {
+    if (!name?.trim()) return;
+    localStorage.setItem('sprint_who', name.trim().slice(0, 64));
+  }
+  protected myName(): string {
+    return localStorage.getItem('sprint_who') ?? '';
+  }
+
+  // ── Snapshot browser ────────────────────────────────────────────────────────
+  protected readonly snapshotList   = signal<string[]>([]);
+  protected readonly showSnapshots  = signal(false);
+  protected readonly viewingSnapshot = signal<string | null>(null);
+
+  async toggleSnapshotBrowser(): Promise<void> {
+    const showing = !this.showSnapshots();
+    this.showSnapshots.set(showing);
+    if (showing && this.snapshotList().length === 0) {
+      try {
+        const res = await fetch('/api/state?snapshots=list');
+        const { days } = await res.json();
+        this.snapshotList.set(days ?? []);
+      } catch {}
+    }
+  }
+
+  async loadSnapshotByDate(date: string): Promise<void> {
+    try {
+      const res = await fetch(`/api/state?snapshot=${date}`);
+      const { state } = await res.json();
+      if (!state) {
+        alert('Brak snapshotu z tego dnia.');
+        return;
+      }
+      // Replace current state from snapshot (jak restore)
+      const laneIds = new Set(
+        (this.modelService.nodes() as DiagramNode[])
+          .filter(n => n.type === 'swimlane').map(n => n.id),
+      );
+      if (this.loadedNodeIds.length) this.modelService.deleteNodes(this.loadedNodeIds);
+      if (this.loadedEdgeIds.length) this.modelService.deleteEdges(this.loadedEdgeIds);
+      if (Array.isArray(state.users))   this.dataStore.setUsers(state.users);
+      if (Array.isArray(state.testers)) this.testers.set(state.testers);
+      if (state.sprint?.startISO && state.sprint?.days) {
+        const [y, m, d2] = state.sprint.startISO.split('-').map(Number);
+        setSprintCalendar(new Date(y, m - 1, d2), state.sprint.days);
+      }
+      this.rebuildLanes();
+      const restoredNodes = (state.nodes ?? []).filter((n: any) => !laneIds.has(n.id));
+      const restoredEdges = state.edges ?? [];
+      this.modelService.addNodes(restoredNodes);
+      this.modelService.addEdges(restoredEdges);
+      this.loadedNodeIds = restoredNodes.map((n: any) => n.id);
+      this.loadedEdgeIds = restoredEdges.map((e: any) => e.id);
+      this.viewingSnapshot.set(date);
+      this.showSnapshots.set(false);
+      this.sprint.isLoaded.set(true);
+    } catch (err) {
+      console.warn('[snapshot] load failed', err);
+    }
+  }
+
+  async returnToCurrent(): Promise<void> {
+    this.viewingSnapshot.set(null);
+    await this.restoreFromServer();
+  }
+
+  // ── Comments per card ───────────────────────────────────────────────────────
+  protected readonly comments      = signal<Record<string, { text: string; author: string; updatedAt: string }>>({});
+  protected readonly editingComment = signal<string>('');
+
+  private async loadComments(): Promise<void> {
+    try {
+      const res = await fetch('/api/comments');
+      if (!res.ok) return;
+      const { comments } = await res.json();
+      this.comments.set(comments ?? {});
+      this.applyCommentBadgesToNodes();
+    } catch {}
+  }
+
+  private applyCommentBadgesToNodes(): void {
+    const c = this.comments();
+    const all = this.modelService.nodes() as DiagramNode[];
+    const updates: NodeUpdate[] = [];
+    for (const n of all) {
+      if (n.type !== 'pbi') continue;
+      const id = (n.data?.['displayId'] ?? n.id) as string;
+      const has = !!c[id]?.text;
+      if (!!n.data?.['hasComment'] !== has) {
+        updates.push({ id: n.id, data: { ...n.data, hasComment: has } });
+      }
+    }
+    if (updates.length) this.modelService.updateNodes(updates);
+  }
+
+  protected commentForSelected(): { text: string; author: string; updatedAt: string } | null {
+    const node = this.selectedNode();
+    if (!node) return null;
+    const id = (node.data?.['displayId'] ?? node.data?.['pbiId'] ?? node.id) as string;
+    return this.comments()[id] ?? null;
+  }
+
+  protected async saveComment(): Promise<void> {
+    const node = this.selectedNode();
+    if (!node) return;
+    const cardId = (node.data?.['displayId'] ?? node.data?.['pbiId'] ?? node.id) as string;
+    const text = this.editingComment().trim();
+    try {
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId, text, author: 'team' }),
+      });
+      if (res.ok) {
+        await this.loadComments();
+        this.applyCommentBadgesToNodes();
+        this.logAudit(text ? 'added comment' : 'removed comment', cardId);
+      }
+    } catch {}
+  }
+
+  protected startEditingComment(): void {
+    const existing = this.commentForSelected();
+    this.editingComment.set(existing?.text ?? '');
+  }
+
   // ── Auto-refresh nowych bugów ───────────────────────────────────────────────
   protected readonly newBugsCount = signal(0);
   private knownPbiIds = new Set<string>();
@@ -345,6 +497,7 @@ export class AppComponent implements AfterViewInit {
     this.restoreFromServer();
     this.startAutoSave();
     this.startBugPolling();
+    this.loadComments();
     document.addEventListener('click', this.outsideClickCapture, true);
   }
 
@@ -675,6 +828,7 @@ export class AppComponent implements AfterViewInit {
         this.testers.set(testers);
         this.knownPbiIds = new Set(pbis.map(p => p.id));
         this.newBugsCount.set(0);
+        this.logAudit(`Reloaded from ADO — ${pbis.length} work items`);
 
         if (result.iteration?.startDate && result.iteration.finishDate) {
           const days = countWorkingDays(result.iteration.startDate, result.iteration.finishDate);

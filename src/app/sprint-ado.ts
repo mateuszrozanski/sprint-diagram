@@ -212,6 +212,7 @@ export function buildNodesFromAdo(
         phaseIdx:    pl.phaseIdx,
         totalPhases: pl.totalPhases,
         state:       parentPbi?.state,
+        // hasComment: dynamicznie podpinamy z app.component przez updateNodes po loadComments
       },
     });
 

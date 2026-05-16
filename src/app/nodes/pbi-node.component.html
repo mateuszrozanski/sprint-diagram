@@ -36,10 +36,15 @@
     <!-- Title -->
     <div class="card-title">{{ node().data['title'] }}</div>
 
-    <!-- Dep marker only (date/parent w details panel) -->
-    @if (hasDeps()) {
+    <!-- Markers row: deps + comment indicator -->
+    @if (hasDeps() || node().data['hasComment']) {
       <div class="card-meta">
-        <span class="meta-dep" title="Dependencies">↤ {{ node().data['dependencies'].length }}</span>
+        @if (hasDeps()) {
+          <span class="meta-dep" title="Dependencies">↤ {{ node().data['dependencies'].length }}</span>
+        }
+        @if (node().data['hasComment']) {
+          <span class="meta-comment" title="Has team comment">💬</span>
+        }
       </div>
     }
   </div>

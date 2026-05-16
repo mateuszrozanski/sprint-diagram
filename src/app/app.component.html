@@ -59,6 +59,14 @@
                 title="Pokaż zmiany od wczorajszego snapshotu">
           @if (showDiff()) { ✓ Diff } @else { ↻ Diff vs yesterday }
         </button>
+        <button class="btn-ado"
+                [class.active]="showSnapshots()"
+                (click)="toggleSnapshotBrowser()"
+                title="Przeglądaj historie snapshotów">📅 History</button>
+        <button class="btn-ado"
+                [class.active]="showAudit()"
+                (click)="toggleAuditLog()"
+                title="Activity log — kto co kiedy">📋 Activity</button>
       }
       @if (!sprint.isLoaded()) {
         <button class="btn-load"
@@ -71,6 +79,48 @@
       <button class="btn-ado" (click)="fitView()">Fit to view</button>
     </div>
   </header>
+
+  <!-- Snapshot browser dropdown -->
+  @if (showSnapshots()) {
+    <div class="snapshot-panel">
+      <strong>Historia snapshotów</strong> (codzienne pierwsze save)
+      @if (snapshotList().length === 0) {
+        <div class="snapshot-empty">Brak zapisanych snapshotów.</div>
+      }
+      <div class="snapshot-list">
+        @for (d of snapshotList(); track d) {
+          <button class="snapshot-item" (click)="loadSnapshotByDate(d)">{{ d }}</button>
+        }
+      </div>
+      @if (viewingSnapshot()) {
+        <button class="snapshot-return" (click)="returnToCurrent()">← Wróć do bieżącego</button>
+      }
+    </div>
+  }
+  @if (viewingSnapshot()) {
+    <div class="snapshot-banner">
+      📅 Viewing snapshot from <strong>{{ viewingSnapshot() }}</strong>
+      <button class="banner-action" (click)="returnToCurrent()">Back to current</button>
+    </div>
+  }
+
+  <!-- Activity log dropdown -->
+  @if (showAudit()) {
+    <div class="snapshot-panel audit-panel">
+      <strong>Activity log</strong>
+      @if (auditEntries().length === 0) {
+        <div class="snapshot-empty">Brak zapisanych zmian.</div>
+      }
+      <div class="audit-list">
+        @for (e of auditEntries(); track e.ts) {
+          <div class="audit-item">
+            <div class="audit-meta">{{ e.ts.slice(11, 16) }} · {{ e.ts.slice(0, 10) }} · <strong>{{ e.who }}</strong></div>
+            <div class="audit-what">{{ e.what }} @if (e.cardId) { <span class="audit-card">#{{ e.cardId }}</span> }</div>
+          </div>
+        }
+      </div>
+    </div>
+  }
 
   <!-- New bugs banner -->
   @if (newBugsCount() > 0) {
@@ -212,6 +262,23 @@
                   (click)="copyAdoLink()">
             @if (copyLinkOk()) { ✓ Copied } @else { ⧉ Copy link }
           </button>
+        </div>
+
+        <!-- Comments — local, poza ADO -->
+        <div class="details-comments">
+          <div class="details-label">Comment <span class="hint">(visible to team, not in ADO)</span></div>
+          @if (commentForSelected(); as c) {
+            <div class="comment-block">
+              <div class="comment-text">{{ c.text }}</div>
+              <div class="comment-meta">— {{ c.author }} · {{ c.updatedAt.slice(0, 10) }}</div>
+            </div>
+          }
+          <textarea class="comment-input"
+                    placeholder="Add note (OOO, blocker context, decisions...)"
+                    [value]="editingComment()"
+                    (focus)="startEditingComment()"
+                    (input)="editingComment.set($any($event.target).value)"></textarea>
+          <button class="details-link comment-save" (click)="saveComment()">💬 Save comment</button>
         </div>
       }
 

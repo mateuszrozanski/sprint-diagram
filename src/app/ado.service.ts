@@ -54,6 +54,19 @@ function roleFromTags(tags: string): string {
   return 'Dev';
 }
 
+/**
+ * Aktywność z `Microsoft.VSTS.Common.Activity` (standardowe pole ADO Task) —
+ * typowe wartości: Development, Testing, Documentation, Design, Deployment,
+ * Requirements. Fallback: tag-based role.
+ */
+function activityFromTask(task: any): string {
+  const activity = task.fields?.['Microsoft.VSTS.Common.Activity'];
+  if (typeof activity === 'string' && activity.trim()) return activity.trim();
+  const tagRole = roleFromTags(task.fields?.['System.Tags'] ?? '');
+  if (tagRole !== 'Dev') return tagRole;
+  return 'Development';
+}
+
 function slugifyUser(displayName: string): string {
   const slug = displayName
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -203,23 +216,65 @@ export class AdoService {
         return 3;
       })();
 
-      const phases: AdoPbi['phases'] = devTasks.length
-        ? devTasks.map(t => {
-            const hours = t.fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number;
-            return {
-              assigneeId: resolveAssignee(t.fields['System.AssignedTo']?.displayName),
-              days:       hoursToDays(hours),   // 0.5 increments — do layoutu (snapowanie do sprintDays)
-              hours,                            // surowe godziny — do wizualnej szerokości karty
-              role:       roleFromTags(t.fields['System.Tags'] ?? ''),
-              title:      t.fields['System.Title'] as string,
-            };
-          })
+      // ── Grupowanie tasków po (activity, assignee) ─────────────────────
+      // Zamiast 1 karty per task (kompletnie nieczytelne przy 5-10 tasków),
+      // grupujemy taski o tej samej aktywności (Development/Testing/Design)
+      // i tym samym dev-ie w JEDNĄ kartę. Hours = suma. Jeśli dwóch devów
+      // robi Development tego samego PBI → dwie karty "Development".
+      type Group = { activity: string; assigneeId: string; hours: number; titles: string[] };
+      const groupMap = new Map<string, Group>();
+      for (const t of devTasks) {
+        const activity   = activityFromTask(t);
+        const assigneeId = resolveAssignee(t.fields['System.AssignedTo']?.displayName);
+        const hours      = t.fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number;
+        const key        = `${activity}|${assigneeId}`;
+        const existing   = groupMap.get(key);
+        const title      = t.fields['System.Title'] as string;
+        if (existing) {
+          existing.hours += hours;
+          existing.titles.push(title);
+        } else {
+          groupMap.set(key, { activity, assigneeId, hours, titles: [title] });
+        }
+      }
+
+      const groups = [...groupMap.values()];
+
+      // Numerowanie kolejnych wystąpień tej samej aktywności w PBI:
+      // 1×Development → "Development"; 2×Development → "Development", "Development 2"; itd.
+      const activityCount = new Map<string, number>();
+      const activitySeen  = new Map<string, number>();
+      for (const g of groups) {
+        activityCount.set(g.activity, (activityCount.get(g.activity) ?? 0) + 1);
+      }
+      const labeledGroups = groups.map(g => {
+        const seen = (activitySeen.get(g.activity) ?? 0) + 1;
+        activitySeen.set(g.activity, seen);
+        const total = activityCount.get(g.activity) ?? 1;
+        const suffix = total > 1 ? ` ${seen}` : '';
+        return { ...g, label: `${g.activity}${suffix}` };
+      });
+
+      const phases: AdoPbi['phases'] = labeledGroups.length
+        ? labeledGroups.map(g => ({
+            assigneeId: g.assigneeId,
+            days:       hoursToDays(g.hours),
+            hours:      g.hours,
+            role:       g.activity,
+            // Title widoczny na karcie. "Development 2" jeśli >1 dev robi to samo
+            // w tym PBI. Jeśli grupa zawiera >1 task, dopisujemy "(N tasks)".
+            title:      g.titles.length > 1
+              ? `${g.label} (${g.titles.length} tasks)`
+              : g.label,
+          }))
         : [{
-            // Brak otwartych dev tasków = PBI w code review / QA / done.
+            // PBI bez open dev-tasks (np. w code review / QA) — pokazujemy jako
+            // jedną kartę "Development" z estymaty PBI.
             assigneeId: resolveAssignee(fields['System.AssignedTo']?.displayName),
             days:       hoursToDays(fallbackHours),
             hours:      fallbackHours,
-            role:       'Dev',
+            role:       'Development',
+            title:      'Development',
           }];
 
       const tester = resolveTester(fields['Custom.QATester']?.displayName);

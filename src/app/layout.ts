@@ -67,6 +67,40 @@ export function getSprintDayOffset(day: number): number {
   return 5 * L.DAY_W + 2 * L.WKND_W + (day - 6) * L.DAY_W;
 }
 
+/**
+ * Odwrotność `getSprintDayOffset` — z px (offsetu od LABEL_W) wyciąga
+ * sprintDay kolumny, w której ten px wypada. Dla weekendów zwraca null.
+ */
+export function pxToSprintDay(offsetFromLabel: number): number | null {
+  if (offsetFromLabel < 0) return null;
+  let acc = 0;
+  for (let i = 0; i < CALENDAR_SLOTS.length; i++) {
+    const w = CALENDAR_SLOTS[i].isWeekend ? L.WKND_W : L.DAY_W;
+    if (offsetFromLabel < acc + w) return CALENDAR_SLOTS[i].sprintDay;
+    acc += w;
+  }
+  return CALENDAR_SLOTS[CALENDAR_SLOTS.length - 1]?.sprintDay ?? null;
+}
+
+/**
+ * Najbliższy sprintDay (working day) dla danego x px od LABEL_W. Jeśli x trafia
+ * w weekend/holiday → najbliższy następny working day.
+ */
+export function nearestWorkingSprintDay(offsetFromLabel: number): number {
+  const direct = pxToSprintDay(offsetFromLabel);
+  if (direct !== null) return direct;
+  // weekend → idziemy w prawo do najbliższego working day
+  let acc = 0;
+  for (let i = 0; i < CALENDAR_SLOTS.length; i++) {
+    const w = CALENDAR_SLOTS[i].isWeekend ? L.WKND_W : L.DAY_W;
+    acc += w;
+    if (acc > offsetFromLabel && CALENDAR_SLOTS[i].sprintDay !== null) {
+      return CALENDAR_SLOTS[i].sprintDay as number;
+    }
+  }
+  return 1;
+}
+
 export function getPbiPosition(pbi: PBI, userIndex: number) {
   return {
     x: L.LABEL_W + getSprintDayOffset(pbi.startDay) + L.PAD,

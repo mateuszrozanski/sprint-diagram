@@ -1,6 +1,6 @@
 import { ADO_MOCK_PBIS, CALENDAR_SLOTS, INCOMING_BUGS_MOCK, USERS, type AdoPbi, type PBI } from './sprint-data';
 import type { DiagramNode, DiagramEdge } from './sprint-data';
-import { L, getPbiPosition, getPbiWidth, getQaPosition, getQaWidth, getEffectiveQaWidth } from './layout';
+import { L, getSprintDayOffset, getQaWidth, getEffectiveQaWidth, nearestWorkingSprintDay, skipNonWorkingX } from './layout';
 import { widthForHours } from './card-width';
 
 // ── Holiday-aware day helpers ────────────────────────────────────────────────
@@ -88,8 +88,13 @@ export function buildNodesFromAdo(
   const assigneeMap = new Map<string, string>();
   const depsMap     = new Map<string, string[]>();
 
-  const devCursor  = new Map<string, number>(users.map(u => [u.id, 1]));
-  const pbiLastEnd = new Map<string, number>(); // pbiId → end day of its last phase
+  // Px-based packing per dev. Karta zajmuje TYLKO tyle px ile godzin × proporcja,
+  // bez zaokrąglania do całego dnia. 4h = 240px (~70% kolumny), 7h = 420px (~1.25
+  // kolumny). Wymiar zgodny z `widthForHours()`.
+  const FIRST_X = L.LABEL_W + L.PAD;
+  const devCursorPx  = new Map<string, number>(users.map(u => [u.id, FIRST_X]));
+  const pbiLastEndPx = new Map<string, number>();
+  const phaseEndPx   = new Map<string, number>();
 
   interface PhaseLayout {
     id: string;
@@ -106,18 +111,20 @@ export function buildNodesFromAdo(
     totalPhases: number;
     isHalfDay: boolean;
     isParallel: boolean;
+    x: number;
+    width: number;
   }
 
   const allPhases: PhaseLayout[] = [];
   const sorted = topoSort(items);
 
   for (const pbi of sorted) {
-    // Cross-PBI constraint: must start after all dependencies have finished
-    const dependsOnEnd = (pbi.dependsOn ?? []).reduce((max, depId) =>
-      Math.max(max, pbiLastEnd.get(depId) ?? 0), 0
+    // Cross-PBI constraint: faza zacznie się dopiero po końcu wszystkich zależnych PBI.
+    const dependsOnEndPx = (pbi.dependsOn ?? []).reduce((max, depId) =>
+      Math.max(max, pbiLastEndPx.get(depId) ?? 0), 0
     );
 
-    let prevSeqEndDay = dependsOnEnd; // only sequential phases advance this
+    let prevSeqEndPx = dependsOnEndPx; // tylko sequential phases podbijają tę wartość
 
     for (let i = 0; i < pbi.phases.length; i++) {
       const phase      = pbi.phases[i];
@@ -126,13 +133,23 @@ export function buildNodesFromAdo(
       const isHalfDay  = phase.days === 0.5;
       const isParallel = !!phase.parallel;
 
-      const devStart   = devCursor.get(assignee) ?? 1;
-      const chainStart = isParallel ? 1 : (prevSeqEndDay > 0 ? prevSeqEndDay + 1 : 1);
-      const startDay   = nextWorkingDay(Math.max(devStart, chainStart));
-      const endDay     = isHalfDay ? startDay : computeEndDay(startDay, phase.days);
+      const w = widthForHours(phase.hours);
 
-      devCursor.set(assignee, endDay + 1);
-      if (!isParallel) prevSeqEndDay = endDay;
+      const devCursor  = devCursorPx.get(assignee) ?? FIRST_X;
+      const chainStart = isParallel ? FIRST_X : (prevSeqEndPx > 0 ? prevSeqEndPx + L.PAD : FIRST_X);
+      let x = Math.max(devCursor, chainStart);
+      // Jeśli x trafia w weekend/holiday, przeskocz do najbliższego working dnia.
+      x = skipNonWorkingX(x);
+
+      const endX = x + w;
+
+      devCursorPx.set(assignee, endX + L.PAD);
+      if (!isParallel) prevSeqEndPx = endX;
+      phaseEndPx.set(phaseId, endX);
+
+      // Display-only sprintDay (na podstawie kolumny w której wypada x).
+      const startDay = nearestWorkingSprintDay(x - L.LABEL_W);
+      const endDay   = nearestWorkingSprintDay(endX - L.LABEL_W - 1);
 
       assigneeMap.set(phaseId, assignee);
 
@@ -165,12 +182,14 @@ export function buildNodesFromAdo(
         totalPhases: pbi.phases.length,
         isHalfDay,
         isParallel,
+        x,
+        width:       w,
       });
     }
 
-    // pbiLastEnd = latest end day across all phases (including parallel)
+    // pbiLastEndPx = najbardziej-w-prawo koniec dowolnej fazy PBI (incl. parallel)
     const pbiPhases = allPhases.filter(p => p.parentId === pbi.id);
-    pbiLastEnd.set(pbi.id, Math.max(...pbiPhases.map(p => p.endDay)));
+    pbiLastEndPx.set(pbi.id, Math.max(...pbiPhases.map(p => p.x + p.width)));
   }
 
   const nodes: DiagramNode[] = [];
@@ -193,16 +212,19 @@ export function buildNodesFromAdo(
     // Szerokość przez `widthForHours` (testowany) — patrz card-width.ts.
     const parentPbi = items.find(p => p.id === pl.parentId);
     const phaseHours = parentPbi?.phases[pl.phaseIdx]?.hours;
-    const nodeWidth = widthForHours(phaseHours);
 
     nodes.push({
       id:       pl.id,
       type:     'pbi',
       zOrder:   10,
-      position: getPbiPosition(pbiObj, userIdx),
+      // Px-pack layout — pozycja przepisana z PhaseLayout.x (cursor px per dev).
+      position: {
+        x: pl.x,
+        y: L.HEADER_H + (userIdx + 1) * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),
+      },
       data: {
         ...pbiObj,
-        width:       nodeWidth,
+        width:       pl.width,
         height:      L.NODE_H,
         displayId:   pl.parentId,
         parentTitle: pl.parentTitle,
@@ -253,26 +275,22 @@ export function buildNodesFromAdo(
   }
 
   for (const [pbiId, phases] of pbiGroups) {
-    const rightmost = phases.reduce((best, p) => p.endDay > best.endDay ? p : best);
+    // Najbardziej-w-prawo faza (px-based) — QA card siada tuż za nią.
+    const rightmost = phases.reduce((best, p) => (p.x + p.width) > (best.x + best.width) ? p : best);
     const pbi = items.find(p => p.id === pbiId);
     const testerSubRow = pbi?.qaTesterId
       ? (testerIndex.get(pbi.qaTesterId) ?? 0)
       : 0;
-    const pbiObj: PBI = {
-      id:              rightmost.id,
-      title:           rightmost.title,
-      color:           rightmost.parentColor,
-      primaryAssignee: rightmost.assigneeId,
-      collaborators:   [],
-      startDay:        rightmost.startDay,
-      endDay:          rightmost.endDay,
-      dependencies:    [],
-    };
+    const qaRowIndex = users.length + 1 + testerSubRow;
+    const qaX = skipNonWorkingX(rightmost.x + rightmost.width + L.PAD);
     nodes.push({
       id:       `qa-${pbiId}`,
       type:     'qa-task',
       zOrder:   10,
-      position: getQaPosition(pbiObj, users.length, testerSubRow),
+      position: {
+        x: qaX,
+        y: L.HEADER_H + qaRowIndex * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),
+      },
       data: {
         pbiId,
         pbiTitle:   pbi?.title ?? '',

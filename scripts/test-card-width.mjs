@@ -1,27 +1,40 @@
 // node scripts/test-card-width.mjs — sprawdza formułę widthForHours()
 
-const MIN_WIDTH = 220;
-const PX_PER_HOUR = 60;
-const MAX_WIDTH = 3000;
+const MIN_WIDTH     = 220;
+const PX_PER_HOUR   = 60;
+const MAX_WIDTH     = 3000;
+const DAY_W         = 340;
+const PAD           = 6;
+const HOURS_PER_DAY = 6;
+
+function spanDays(hours) {
+  const halfDays = Math.max(0.5, Math.round((hours / HOURS_PER_DAY) * 2) / 2);
+  return Math.ceil(halfDays);
+}
 
 function widthForHours(hours) {
   if (typeof hours !== 'number' || hours <= 0) return MIN_WIDTH;
-  const extra = Math.max(0, hours - 1) * PX_PER_HOUR;
-  return Math.min(MAX_WIDTH, Math.round(MIN_WIDTH + extra));
+  const proportional = hours * PX_PER_HOUR;
+  const dayCap       = spanDays(hours) * DAY_W - 2 * PAD;
+  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.min(proportional, dayCap)));
 }
 
 const cases = [
-  { hours: undefined, expected: 220, why: 'no hours → min' },
-  { hours: 0,         expected: 220, why: '0h → min' },
-  { hours: 0.5,       expected: 220, why: '<1h → min (baseline)' },
-  { hours: 1,         expected: 220, why: '1h = baseline (everything fits)' },
-  { hours: 2,         expected: 280, why: '1h baseline + 60 = 280' },
-  { hours: 3,         expected: 340, why: '+ 2*60 = 340' },
-  { hours: 4,         expected: 400, why: '+ 3*60 = 400' },
-  { hours: 6,         expected: 520, why: '+ 5*60 = 520' },
-  { hours: 8,         expected: 640, why: '+ 7*60 = 640' },
-  { hours: 12,        expected: 880, why: '+ 11*60 = 880 (~2.5d)' },
-  { hours: 60,        expected: 3000,why: 'extreme → MAX cap' },
+  { hours: undefined, expected: 220,  why: 'no hours → min' },
+  { hours: 0,         expected: 220,  why: '0h → min' },
+  { hours: 0.5,       expected: 220,  why: '<1h → min (1d span, 30px capped to MIN 220)' },
+  { hours: 1,         expected: 220,  why: '1h: 60 < MIN → 220' },
+  { hours: 2,         expected: 220,  why: '2h: 120 < MIN → 220' },
+  { hours: 3,         expected: 220,  why: '3h: 180 < MIN → 220' },
+  { hours: 4,         expected: 240,  why: '4h: 240 (1d cap=328) → 240' },
+  { hours: 5,         expected: 300,  why: '5h: 300 (1d cap=328) → 300' },
+  { hours: 6,         expected: 328,  why: '6h: 360 capped to 1d=328' },
+  { hours: 8,         expected: 480,  why: '8h: 480 (2d cap=668)' },
+  { hours: 9,         expected: 540,  why: '9h: 540 (2d cap=668)' },
+  { hours: 11,        expected: 660,  why: '11h: 660 (2d cap=668)' },
+  { hours: 12,        expected: 668,  why: '12h: 720 capped to 2d=668' },
+  { hours: 18,        expected: 1008, why: '18h: 1080 capped to 3d=1008' },
+  { hours: 60,        expected: 3000, why: 'extreme → MAX cap' },
 ];
 
 let pass = 0, fail = 0;

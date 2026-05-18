@@ -4,8 +4,15 @@
  * Zasada (uzgodnione z PO):
  *   • `MIN_WIDTH` to baseline — najmniejszy task ma tyle pikseli (musi być czytelny).
  *   • Powyżej baseline szerokość rośnie proporcjonalnie do godzin: `hours * PX_PER_HOUR`.
+ *   • Cap do dnia kalendarza — `widthForHours(hours)` nigdy nie przekracza
+ *     `spanDays * DAY_W - 2*PAD`, żeby karty nie nachodziły na sąsiednie kolumny.
  *   • Cap na `MAX_WIDTH` żeby super-long taski nie wylatywały poza sprint.
  */
+
+// Lokalne stałe (duplikat z layout.ts) — moduł celowo standalone do testów.
+const DAY_W         = 340;
+const PAD           = 6;
+const HOURS_PER_DAY = 6;
 
 export const CARD_WIDTH = {
   MIN_WIDTH:    220,   // żeby ZAWSZE zmieścił się top row: ID + BUG + hours + avatar + ⓘ
@@ -13,12 +20,24 @@ export const CARD_WIDTH = {
   MAX_WIDTH:    3000,
 } as const;
 
+/**
+ * Span w pełnych dniach kalendarza dla zadania o danej liczbie godzin.
+ * Musi pasować do `computeEndDay()` w sprint-ado.ts — tam workDays=0.5
+ * skutkuje 1-dniowym spanem (day++ włącza się dopiero gdy worked < workDays).
+ */
+function spanDays(hours: number): number {
+  const halfDays = Math.max(0.5, Math.round((hours / HOURS_PER_DAY) * 2) / 2);
+  return Math.ceil(halfDays);
+}
+
 export function widthForHours(hours: number | undefined): number {
   if (typeof hours !== 'number' || hours <= 0) return CARD_WIDTH.MIN_WIDTH;
-  // 1h (lub mniej) = MIN_WIDTH (baseline, wszystkie ikony zmieszczą się).
-  // Każda dodatkowa godzina powyżej 1h dodaje PX_PER_HOUR (60px).
-  const extra = Math.max(0, hours - 1) * CARD_WIDTH.PX_PER_HOUR;
-  return Math.min(CARD_WIDTH.MAX_WIDTH, Math.round(CARD_WIDTH.MIN_WIDTH + extra));
+  const proportional = hours * CARD_WIDTH.PX_PER_HOUR;
+  const dayCap       = spanDays(hours) * DAY_W - 2 * PAD;
+  return Math.min(
+    CARD_WIDTH.MAX_WIDTH,
+    Math.max(CARD_WIDTH.MIN_WIDTH, Math.min(proportional, dayCap)),
+  );
 }
 
 /**

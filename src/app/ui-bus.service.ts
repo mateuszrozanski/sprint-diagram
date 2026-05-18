@@ -8,4 +8,11 @@ import type { DiagramNode } from './sprint-data';
 @Injectable({ providedIn: 'root' })
 export class UiBusService {
   readonly openDetailsForNode = signal<DiagramNode | null>(null);
+
+  /** displayId (PBI id) wszystkich kart które mają zostać podświetlone — toggle z karty. */
+  readonly highlightedPbiId = signal<string | null>(null);
+
+  toggleHighlight(pbiId: string): void {
+    this.highlightedPbiId.set(this.highlightedPbiId() === pbiId ? null : pbiId);
+  }
 }

@@ -33,6 +33,13 @@
   align-self: stretch;
 }
 
+/* Scope highlight = wszystkie karty tego samego PBI po toggle z scope-btn */
+.pbi-card.scope-highlight {
+  border-color: #ffb74d;
+  box-shadow: 0 0 0 2px rgba(255, 183, 77, 0.55), 0 4px 14px rgba(255, 183, 77, 0.35);
+  z-index: 5;
+}
+
 /* Blocked = pulsująca czerwona ramka */
 .pbi-card.blocked {
   border-color: var(--state-color, #ef4444);
@@ -49,13 +56,16 @@
   background: rgba(0,0,0,0.25); white-space: nowrap; flex-shrink: 0;
 }
 
-.info-btn {
+.info-btn,
+.scope-btn {
   background: transparent; border: none; color: #888; cursor: pointer;
   font-size: 14px; padding: 0 4px; flex-shrink: 0;
   border-radius: 50%; width: 22px; height: 22px;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.info-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.info-btn:hover,
+.scope-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.scope-btn.active { color: #ffb74d; background: rgba(255, 183, 77, 0.15); }
 
 /* ── Card body ──────────────────────────── */
 .card-body {

@@ -37,6 +37,18 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
     this.uiBus.openDetailsForNode.set(this.node());
   }
 
+  /** Toggle highlight wszystkich kart o tym samym displayId (PBI scope view). */
+  protected toggleScope(e: MouseEvent): void {
+    e.stopPropagation();
+    this.uiBus.toggleHighlight(this.displayId());
+  }
+
+  /** Czy ta karta należy do aktualnie podświetlonego PBI? */
+  protected isScopeHighlighted = computed(() => {
+    const hi = this.uiBus.highlightedPbiId();
+    return hi !== null && hi === this.displayId();
+  });
+
   protected color     = computed(() => this.node().data['color']    as string);
   protected height    = computed(() => this.node().data['height']   as number);
   protected hasDeps   = computed(() => (this.node().data['dependencies'] as string[]).length > 0);

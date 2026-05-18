@@ -1,5 +1,6 @@
 <div class="pbi-card"
      [class.blocked]="isBlocked()"
+     [class.scope-highlight]="isScopeHighlighted()"
      [attr.data-diff-flag]="node().data['diffFlag']"
      [attr.data-whatif-modified]="node().data['whatifModified']"
      [style.width.px]="effectiveWidth()"
@@ -28,6 +29,11 @@
                 [title]="userName(uid)">{{ initials(uid) }}</span>
         }
       </div>
+      <button class="scope-btn"
+              [class.active]="isScopeHighlighted()"
+              (pointerdown)="$event.stopPropagation()"
+              (click)="toggleScope($event)"
+              title="Highlight all cards of this PBI">⊙</button>
       <button class="info-btn"
               (pointerdown)="$event.stopPropagation()"
               (click)="openDetails($event)"

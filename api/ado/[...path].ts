@@ -14,6 +14,13 @@ const QA_TESTERS  = (process.env['ADO_QA_TESTERS'] ?? '')
   .map(s => s.trim())
   .filter(Boolean);
 
+// Lista wszystkich devów w sprincie (display names CSV) — żeby na board byli widoczni
+// nawet bez przypisanych tasków. Bez tego osoby bez tasków znikają.
+const DEVS = (process.env['ADO_DEVS'] ?? '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 const DEMO_USER   = process.env['DEMO_USER']      ?? '';
 const DEMO_PASS   = process.env['DEMO_PASS']      ?? '';
 
@@ -159,6 +166,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         startDate:  it.attributes?.startDate ?? null,
         finishDate: it.attributes?.finishDate ?? null,
         qaTesters:  QA_TESTERS,
+        devs:       DEVS,
       });
     }
 

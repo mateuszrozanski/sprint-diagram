@@ -17,7 +17,10 @@ const DAY_W         = 340;
 const HOURS_PER_DAY = 6;
 
 export const CARD_WIDTH = {
-  MIN_WIDTH:    220,                       // żeby zmieścił się top row ikon
+  // 130px = ~2.3h equivalent. Pozwala odróżnić 2h/4h/6h cards wizualnie. Ikony
+  // w top row (BUG badge, avatar, info-btn) zwijają się/owijają przy niższych
+  // szerokościach — akceptowalny trade-off dla proporcji.
+  MIN_WIDTH:    130,
   PX_PER_HOUR:  DAY_W / HOURS_PER_DAY,    // 56.67 — exact ratio
   MAX_WIDTH:    3000,
 } as const;

@@ -349,35 +349,31 @@ export function buildNodesFromAdo(
     // Szerokość przez `widthForHours` (testowany) — patrz card-width.ts.
     const parentPbi = items.find(p => p.id === pl.parentId);
     const phaseHours = parentPbi?.phases[pl.phaseIdx]?.hours;
+    const groupTaskTitles = parentPbi?.phases[pl.phaseIdx]?.groupTaskTitles ?? [];
 
     nodes.push({
       id:       pl.id,
       type:     'pbi',
       zOrder:   10,
-      // Px-pack layout — pozycja przepisana z PhaseLayout.x (cursor px per dev).
       position: {
         x: pl.x,
         y: L.HEADER_H + (userIdx + 1) * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),
       },
-      // autoSize=false + size = explicit — bez tego ng-diagram NodeSizeDirective
-      // dla custom node type ('pbi') RESETUJE inline width z `[style.width.px]`
-      // (applyAutoSize → resetExplicitSizes), więc wszystkie karty miały content-width
-      // = uniform 220px.
       autoSize: false,
       size:     { width: pl.width, height: L.NODE_H },
       data: {
         ...pbiObj,
-        width:       pl.width,
-        height:      L.NODE_H,
-        displayId:   pl.parentId,
-        parentTitle: pl.parentTitle,
-        phaseRole:   pl.role,
-        phaseHours:  phaseHours,
-        isBugType:   pl.parentType === 'Bug',
-        phaseIdx:    pl.phaseIdx,
-        totalPhases: pl.totalPhases,
-        state:       parentPbi?.state,
-        // hasComment: dynamicznie podpinamy z app.component przez updateNodes po loadComments
+        width:           pl.width,
+        height:          L.NODE_H,
+        displayId:       pl.parentId,
+        parentTitle:     pl.parentTitle,
+        phaseRole:       pl.role,
+        phaseHours:      phaseHours,
+        groupTaskTitles: groupTaskTitles,
+        isBugType:       pl.parentType === 'Bug',
+        phaseIdx:        pl.phaseIdx,
+        totalPhases:     pl.totalPhases,
+        state:           parentPbi?.state,
       },
     });
 

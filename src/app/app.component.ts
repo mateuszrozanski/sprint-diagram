@@ -843,6 +843,13 @@ export class AppComponent implements AfterViewInit {
     }).catch(() => {});
   }
 
+  protected groupedTaskTitlesForSelected(): string[] {
+    const node = this.selectedNode();
+    if (!node) return [];
+    const raw = node.data?.['groupTaskTitles'];
+    return Array.isArray(raw) ? raw as string[] : [];
+  }
+
   protected assigneeNameForSelected(): string {
     const node = this.selectedNode();
     if (!node) return '';

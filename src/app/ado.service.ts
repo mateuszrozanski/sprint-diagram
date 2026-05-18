@@ -125,6 +125,12 @@ export class AdoService {
       (iterationRaw?.qaTesters ?? []).map((s: string) => s.toLowerCase()),
     );
 
+    // Devs from env (ADO_DEVS) — gwarantują że osoba bez tasków też pojawi się na board.
+    const seededDevs: { id: string; name: string }[] = ((iterationRaw?.devs ?? []) as string[])
+      .map(name => name.trim())
+      .filter(Boolean)
+      .map(name => ({ id: slugifyUser(name), name }));
+
     const pbiIds: number[] = (wiqlResult.workItems ?? []).map((w: any) => w.id);
     if (!pbiIds.length) return { pbis: [], users, testers: [], iteration };
 
@@ -139,8 +145,11 @@ export class AdoService {
     const taskItems = taskIds.length ? await fetchItems(taskIds) : [];
     const taskMap   = new Map<number, any>(taskItems.map(t => [t.id, t]));
 
-    const usersById   = new Map(users.map(u => [u.id, u]));
-    const usersByName = new Map(users.map(u => [u.name.toLowerCase(), u]));
+    // Merge: caller-passed users + ADO_DEVS env seed. Devs z env idą jako baseline,
+    // nawet jeśli nie mają tasków w bieżącym sprincie.
+    const allBaselineUsers = [...users, ...seededDevs];
+    const usersById   = new Map(allBaselineUsers.map(u => [u.id, u]));
+    const usersByName = new Map(allBaselineUsers.map(u => [u.name.toLowerCase(), u]));
     const testersById = new Map<string, SprintUser>();
 
     function resolveAssignee(rawName: string | undefined): string {
@@ -257,15 +266,14 @@ export class AdoService {
 
       const phases: AdoPbi['phases'] = labeledGroups.length
         ? labeledGroups.map(g => ({
-            assigneeId: g.assigneeId,
-            days:       hoursToDays(g.hours),
-            hours:      g.hours,
-            role:       g.activity,
-            // Title widoczny na karcie. "Development 2" jeśli >1 dev robi to samo
-            // w tym PBI. Jeśli grupa zawiera >1 task, dopisujemy "(N tasks)".
-            title:      g.titles.length > 1
-              ? `${g.label} (${g.titles.length} tasks)`
-              : g.label,
+            assigneeId:       g.assigneeId,
+            days:             hoursToDays(g.hours),
+            hours:            g.hours,
+            role:             g.activity,
+            title:            g.titles.length > 1
+                                ? `${g.label} (${g.titles.length} tasks)`
+                                : g.label,
+            groupTaskTitles:  g.titles,
           }))
         : [{
             // PBI bez open dev-tasks (np. w code review / QA) — pokazujemy jako

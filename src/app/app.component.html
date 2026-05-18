@@ -296,6 +296,17 @@
           }
         </div>
 
+        @if (groupedTaskTitlesForSelected().length > 0) {
+          <div class="details-section">
+            <div class="details-label">Tasks in group ({{ groupedTaskTitlesForSelected().length }})</div>
+            <ul class="grouped-tasks">
+              @for (t of groupedTaskTitlesForSelected(); track t) {
+                <li class="grouped-task">{{ t }}</li>
+              }
+            </ul>
+          </div>
+        }
+
         <div class="details-actions">
           <a class="details-link"
              [href]="adoUrlForSelected()"

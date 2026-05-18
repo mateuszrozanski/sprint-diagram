@@ -30,6 +30,7 @@ function countWorkingDays(start: Date, finish: Date): number {
   return count;
 }
 import { buildNodesFromAdo, buildIncomingBugs } from './sprint-ado';
+import { widthForHours } from './card-width';
 import { L, getTotalWidth } from './layout';
 import { resolveQaCollisions } from './sprint-utils';
 import type { NodeUpdate } from './sprint-data';
@@ -179,6 +180,15 @@ export class AppComponent implements AfterViewInit {
     this.rebuildLanes();
     const restoredNodes = (state.nodes ?? []).filter((n: any) => !laneIds.has(n.id));
     const restoredEdges = state.edges ?? [];
+    // Stale widths/heights — saved state może pochodzić z poprzedniej formuły
+    // widthForHours/NODE_H. Liczymy poprawne wartości z `phaseHours` zanim wrzucimy
+    // do modelu, żeby karty nie nakładały się na siebie.
+    for (const n of restoredNodes) {
+      if (n.type !== 'pbi' || !n.data) continue;
+      const hours = n.data['phaseHours'] as number | undefined;
+      n.data.width  = widthForHours(hours);
+      n.data.height = L.NODE_H;
+    }
     this.modelService.addNodes(restoredNodes);
     this.modelService.addEdges(restoredEdges);
     this.loadedNodeIds = restoredNodes.map((n: any) => n.id);

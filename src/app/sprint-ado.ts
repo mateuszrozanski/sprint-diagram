@@ -16,53 +16,16 @@ function nextWorkingDay(day: number): number {
 }
 
 /**
- * Place a phase honoring "1 working day = 6h" capacity per dev.
- * If the phase doesn't fit in what's left of the current sprint-day column,
- * push it to the next working day (no splitting). Phases bigger than 1 day
- * are allowed to span multiple days from a day-start.
+ * Tight px-pack — żadnych dziur w wierszu deva. Phases siedzą flush jedna za
+ * drugą. Weekend/holiday są przeskakiwane przez `skipNonWorkingX` ale tylko
+ * gdy cursor wpada w non-working slot — bez sztucznego push do następnego dnia
+ * gdy phase "nie mieści się" w pozostałym budżecie current day.
  *
- * Wraca placedX (gdzie postawić kartę) i nextCursor (gdzie zaczyna się
- * następna faza tego deva).
+ * Konsekwencja: phase może wizualnie przekraczać day-boundary w środku dnia.
+ * To okej — day grid w nagłówku jest referencyjny, nie strict bin.
  */
-function placeWithinDay(cursorX: number, phaseWidth: number): { placedX: number; nextCursor: number } {
-  let x = skipNonWorkingX(cursorX);
-
-  // Find slot containing x, check fit; iterate if push needed.
-  for (let safety = 0; safety < 100; safety++) {
-    let acc = L.LABEL_W;
-    let foundSlot = -1;
-    let slotLeft = acc;
-    let slotRight = acc;
-    for (let i = 0; i < CALENDAR_SLOTS.length; i++) {
-      const slotW = CALENDAR_SLOTS[i].isWeekend ? L.WKND_W : L.DAY_W;
-      const left = acc;
-      const right = acc + slotW;
-      if (x >= left && x < right) {
-        foundSlot = i;
-        slotLeft = left;
-        slotRight = right;
-        break;
-      }
-      acc += slotW;
-    }
-    if (foundSlot < 0) {
-      // Past sprint end — just accept.
-      return { placedX: x, nextCursor: x + phaseWidth };
-    }
-    if (CALENDAR_SLOTS[foundSlot].isNonWorking) {
-      x = slotRight;
-      continue;
-    }
-    const remaining = slotRight - x;
-    const atDayStart = x <= slotLeft + 1; // bez tolerancji PAD — phase starts exactly na day-edge
-    if (phaseWidth <= remaining || atDayStart) {
-      // Fits in remaining day budget, OR phase starts at day-start so jest OK żeby
-      // pociągnąć ją multi-day.
-      return { placedX: x, nextCursor: x + phaseWidth };
-    }
-    // Doesn't fit; push to next slot boundary.
-    x = slotRight;
-  }
+function placePhase(cursorX: number, phaseWidth: number): { placedX: number; nextCursor: number } {
+  const x = skipNonWorkingX(cursorX);
   return { placedX: x, nextCursor: x + phaseWidth };
 }
 
@@ -271,7 +234,7 @@ export function buildNodesFromAdo(
     // jest pushowana na początek następnego working dnia (no splitting).
     // Bez PAD między phases — w przeciwnym razie 4h+2h przekraczają DAY_W o 6px
     // i 2h niesłusznie skacze na kolejny dzień.
-    const { placedX, nextCursor } = placeWithinDay(winner.start, w);
+    const { placedX, nextCursor } = placePhase(winner.start, w);
     scheduledX.set(winner.stub.id, placedX);
     scheduledEndX.set(winner.stub.id, placedX + w);
     devCursorPx.set(winner.stub.assigneeId, nextCursor);

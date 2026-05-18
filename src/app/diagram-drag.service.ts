@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { NgDiagramModelService } from 'ng-diagram';
 import type { DiagramNode, NodeUpdate } from './sprint-data';
-import { L } from './layout';
+import { L, getEffectivePbiWidth } from './layout';
 import { transitiveDependents, syncQaNodes, resolveQaCollisions } from './sprint-utils';
 import { SprintService } from './sprint.service';
 import { SprintDataStoreService } from './sprint-data-store.service';
@@ -48,15 +48,20 @@ export class DiagramDragService {
     allNodes: DiagramNode[],
     draggedIds: ReadonlySet<string>,
   ): void {
-    type Pos = { x: number; y: number; w: number; isDragged: boolean; originX: number };
+    // baseW = data.width (proporcjonalne do godzin). effW = po doliczeniu weekend
+    // slotów w span (renderowana szerokość). Overlap check używa effW żeby karta
+    // przechodząca przez weekend nie nachodziła na sąsiada.
+    type Pos = { x: number; y: number; baseW: number; effW: number; isDragged: boolean; originX: number };
     const posMap = new Map<string, Pos>();
     for (const n of allNodes) {
       if (n.type !== 'pbi') continue;
       const origin = this.dragOrigins.get(n.id);
+      const baseW = (n.data['width'] as number) ?? 200;
       posMap.set(n.id, {
         x: n.position.x,
         y: n.position.y,
-        w: (n.data['width'] as number) ?? 200,
+        baseW,
+        effW: getEffectivePbiWidth(n.position.x, baseW),
         isDragged: draggedIds.has(n.id),
         originX: origin?.x ?? n.position.x,
       });
@@ -66,8 +71,9 @@ export class DiagramDragService {
       if (!p) continue;
       if (u.position?.x !== undefined) p.x = u.position.x;
       if (u.position?.y !== undefined) p.y = u.position.y;
-      if (u.size?.width !== undefined) p.w = u.size.width;
-      if (u.data?.['width'] !== undefined) p.w = u.data['width'] as number;
+      if (u.size?.width !== undefined) p.baseW = u.size.width;
+      if (u.data?.['width'] !== undefined) p.baseW = u.data['width'] as number;
+      p.effW = getEffectivePbiWidth(p.x, p.baseW);
     }
     const byRow = new Map<number, [string, Pos][]>();
     for (const [id, p] of posMap) {
@@ -84,46 +90,30 @@ export class DiagramDragService {
         updates.push({ id, position: { x: p.x, y: p.y } });
       }
     };
+    const pushB = (bId: string, b: Pos, aEnd: number) => {
+      b.x = aEnd + L.PAD;
+      b.effW = getEffectivePbiWidth(b.x, b.baseW);
+      writeUpdate(bId, b);
+    };
     for (const row of byRow.values()) {
-      // Iteruj do stabilizacji — pushy mogą kaskadować.
       let globalChanged = true;
       let safety = 0;
       while (globalChanged && safety++ < 100) {
         globalChanged = false;
-        // Cards w wierszu sorted by current x.
         row.sort((a, b) => a[1].x - b[1].x);
         for (let i = 0; i < row.length - 1; i++) {
-          const [aId, a] = row[i];
+          const [, a] = row[i];
           const [bId, b] = row[i + 1];
-          if (a.x + a.w + L.PAD <= b.x) continue; // brak overlapu
-          // Overlap: A jest leftmost. Decydujemy kogo ruszamy.
+          const aEnd = a.x + a.effW; // używamy effW, żeby weekend slots wewnątrz span'a były wliczone
+          if (aEnd + L.PAD <= b.x) continue;
           if (b.isDragged && !a.isDragged) {
-            // Dragged spadł za static — push dragged dalej w prawo.
-            b.x = a.x + a.w + L.PAD;
-            writeUpdate(bId, b);
-            globalChanged = true;
+            pushB(bId, b, aEnd); globalChanged = true;
           } else if (!b.isDragged && a.isDragged) {
-            // Dragged przed static-iem. Static was originally after dragged? Push.
-            if (b.originX >= a.originX) {
-              b.x = a.x + a.w + L.PAD;
-              writeUpdate(bId, b);
-              globalChanged = true;
-            }
-            // else: static oryginalnie był wcześniej — nie ruszamy (user nawalił
-            // dragged na wcześniejszego, accept visual overlap).
+            if (b.originX >= a.originX) { pushB(bId, b, aEnd); globalChanged = true; }
           } else if (a.isDragged && b.isDragged) {
-            // Oba dragged — push later (b) by current x.
-            b.x = a.x + a.w + L.PAD;
-            writeUpdate(bId, b);
-            globalChanged = true;
+            pushB(bId, b, aEnd); globalChanged = true;
           } else {
-            // Oba static — to nie powinno się zdarzyć ale safety: push b o ile
-            // origin był >= a.origin (nie tworzymy nowych konfliktów).
-            if (b.originX >= a.originX) {
-              b.x = a.x + a.w + L.PAD;
-              writeUpdate(bId, b);
-              globalChanged = true;
-            }
+            if (b.originX >= a.originX) { pushB(bId, b, aEnd); globalChanged = true; }
           }
         }
       }

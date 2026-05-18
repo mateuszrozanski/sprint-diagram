@@ -357,6 +357,13 @@ export function buildNodesFromAdo(
     pbiGroups.get(pl.parentId)!.push(pl);
   }
 
+  // Sprint right edge — żeby QA cards nie wychodziły poza widoczny sprint.
+  let sprintEndX = L.LABEL_W;
+  for (const slot of CALENDAR_SLOTS) {
+    sprintEndX += slot.isWeekend ? L.WKND_W : L.DAY_W;
+  }
+  const qaMaxStartX = Math.max(L.LABEL_W, sprintEndX - getQaWidth());
+
   for (const [pbiId, phases] of pbiGroups) {
     // Najbardziej-w-prawo faza (px-based) — QA card siada tuż za nią.
     const rightmost = phases.reduce((best, p) => (p.x + p.width) > (best.x + best.width) ? p : best);
@@ -365,7 +372,11 @@ export function buildNodesFromAdo(
       ? (testerIndex.get(pbi.qaTesterId) ?? 0)
       : 0;
     const qaRowIndex = users.length + 1 + testerSubRow;
-    const qaX = skipNonWorkingX(rightmost.x + rightmost.width + L.PAD);
+    let qaX = skipNonWorkingX(rightmost.x + rightmost.width + L.PAD);
+    // Clamp do sprint right edge — jak dev phases przekraczają sprint, QA i tak
+    // zostaje w ramach widoku. (Kilka QA cards może się przy granicy zachodzić —
+    // to wizualny sygnał "PBI nie zmieści się w sprincie".)
+    if (qaX > qaMaxStartX) qaX = qaMaxStartX;
     nodes.push({
       id:       `qa-${pbiId}`,
       type:     'qa-task',
@@ -401,7 +412,8 @@ export function buildNodesFromAdo(
     for (let i = 1; i < row.length; i++) {
       const prev = row[i - 1];
       const curr = row[i];
-      const minX = prev.position.x + getEffectiveQaWidth(prev.position.x, getQaWidth()) + L.PAD;
+      let minX = prev.position.x + getEffectiveQaWidth(prev.position.x, getQaWidth()) + L.PAD;
+      if (minX > qaMaxStartX) minX = qaMaxStartX; // nigdy poza sprint right edge
       if (curr.position.x < minX) curr.position = { ...curr.position, x: minX };
     }
   }

@@ -3,6 +3,7 @@ import { NgDiagramNodeTemplate, NgDiagramPortComponent, NgDiagramModelService, N
 import { CALENDAR_SLOTS, categorizeState, stateAccentColor, stateLabel } from '../sprint-data';
 import type { DiagramNode, NodeUpdate } from '../sprint-data';
 import { L, getPbiNonWorkingZones, getEffectivePbiWidth, skipNonWorkingX } from '../layout';
+import { CARD_WIDTH } from '../card-width';
 import { transitiveDependents, resolveCollisions, syncQaNodes, resolveQaCollisions } from '../sprint-utils';
 import { SprintService } from '../sprint.service';
 import { SprintDataStoreService } from '../sprint-data-store.service';
@@ -117,13 +118,18 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
 
     const startX = event.clientX;
     const startW = this.node().data['width'] as number;
-    const minW   = L.DAY_W - 2 * L.PAD;
+    const minW   = CARD_WIDTH.MIN_WIDTH;
     const zoom   = this.viewportService.scale();
+    const DRAG_THRESHOLD_PX = 3;
+    let dragged = false;
 
     const calcW = (clientX: number) => Math.max(minW, startW + (clientX - startX) / zoom);
 
     const onMove = (e: Event) => {
-      const newW = calcW((e as PointerEvent).clientX);
+      const clientX = (e as PointerEvent).clientX;
+      if (!dragged && Math.abs(clientX - startX) < DRAG_THRESHOLD_PX) return;
+      dragged = true;
+      const newW = calcW(clientX);
       const n    = this.node();
       this.modelService.updateNodes([{ id: n.id, position: n.position, data: { ...n.data, width: newW } }]);
     };
@@ -132,6 +138,8 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
       handle.removeEventListener('pointermove', onMove);
       handle.removeEventListener('pointerup',   onUp);
       handle.releasePointerCapture((e as PointerEvent).pointerId);
+
+      if (!dragged) return;
 
       const newW    = calcW((e as PointerEvent).clientX);
       const nodeId  = this.node().id;

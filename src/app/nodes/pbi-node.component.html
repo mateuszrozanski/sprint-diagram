@@ -14,17 +14,13 @@
   <div class="state-stripe" [style.background]="stateColor()"></div>
 
   <div class="card-body">
-    <!-- ID + role + assignees -->
+    <!-- Compact top row: ID + key badges + avatar + ⓘ. nowrap żeby zostawić miejsce na title. -->
     <div class="card-top">
       <span class="pbi-id" [style.color]="color()">{{ displayId() }}</span>
-      @if (isBug()) { <span class="bug-badge">🐛 BUG</span> }
-      @if (stateText()) {
-        <span class="state-badge" [style.color]="stateColor()" [style.border-color]="stateColor()">{{ stateText() }}</span>
-      }
+      @if (isBug()) { <span class="bug-badge">BUG</span> }
       @if (node().data['phaseHours']) {
         <span class="hours-badge" title="Remaining work">{{ node().data['phaseHours'] }}h</span>
       }
-      @if (phaseRole()) { <span class="role-badge" [style.border-color]="color()">{{ phaseRole() }}</span> }
       <div class="avatars">
         @for (uid of assignees(); track uid) {
           <span class="avatar"
@@ -38,8 +34,8 @@
               title="Details">ⓘ</button>
     </div>
 
-    <!-- Title -->
-    <div class="card-title">{{ node().data['title'] }}</div>
+    <!-- Title — fills remaining card-body height -->
+    <div class="card-title" [title]="node().data['title']">{{ node().data['title'] }}</div>
 
     <!-- Markers row: deps + comment indicator -->
     @if (hasDeps() || node().data['hasComment']) {

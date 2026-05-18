@@ -8,15 +8,17 @@
  */
 
 export const CARD_WIDTH = {
-  MIN_WIDTH:    120,
+  MIN_WIDTH:    220,   // żeby ZAWSZE zmieścił się top row: ID + BUG + hours + avatar + ⓘ
   PX_PER_HOUR:  60,    // ≈ DAY_W (340) / 6h-roboczych — 6h task ≈ 1 dzień kalendarza
   MAX_WIDTH:    3000,
 } as const;
 
 export function widthForHours(hours: number | undefined): number {
   if (typeof hours !== 'number' || hours <= 0) return CARD_WIDTH.MIN_WIDTH;
-  const proportional = Math.round(hours * CARD_WIDTH.PX_PER_HOUR);
-  return Math.min(CARD_WIDTH.MAX_WIDTH, Math.max(CARD_WIDTH.MIN_WIDTH, proportional));
+  // 1h (lub mniej) = MIN_WIDTH (baseline, wszystkie ikony zmieszczą się).
+  // Każda dodatkowa godzina powyżej 1h dodaje PX_PER_HOUR (60px).
+  const extra = Math.max(0, hours - 1) * CARD_WIDTH.PX_PER_HOUR;
+  return Math.min(CARD_WIDTH.MAX_WIDTH, Math.round(CARD_WIDTH.MIN_WIDTH + extra));
 }
 
 /**

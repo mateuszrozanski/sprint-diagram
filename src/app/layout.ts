@@ -51,10 +51,10 @@ export function getPbiNonWorkingZones(
 export const L = {
   HEADER_H: 68,
   LABEL_W:  160,
-  ROW_H:    200,
+  ROW_H:    180,
   DAY_W:    340,
   WKND_W:   80,
-  NODE_H:   160,
+  NODE_H:   140,
   PAD:      6,
 };
 

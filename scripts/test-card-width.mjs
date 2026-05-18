@@ -1,26 +1,27 @@
-// Stand-alone test (run: `node scripts/test-card-width.mjs`) — bez Karma/Jest.
-// Sprawdza widthForHours() ręcznie wpisując formułę zgodnie z `card-width.ts`.
+// node scripts/test-card-width.mjs — sprawdza formułę widthForHours()
 
-const MIN_WIDTH = 120;
+const MIN_WIDTH = 220;
 const PX_PER_HOUR = 60;
 const MAX_WIDTH = 3000;
 
 function widthForHours(hours) {
   if (typeof hours !== 'number' || hours <= 0) return MIN_WIDTH;
-  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(hours * PX_PER_HOUR)));
+  const extra = Math.max(0, hours - 1) * PX_PER_HOUR;
+  return Math.min(MAX_WIDTH, Math.round(MIN_WIDTH + extra));
 }
 
 const cases = [
-  { hours: undefined, expected: MIN_WIDTH, why: 'no hours → min' },
-  { hours: 0,         expected: MIN_WIDTH, why: '0h → min' },
-  { hours: 1,         expected: MIN_WIDTH, why: '1h × 60 = 60 < min(120)' },
-  { hours: 2,         expected: MIN_WIDTH, why: '2h × 60 = 120 == min' },
-  { hours: 3,         expected: 180,       why: '3h × 60 = 180' },
-  { hours: 4,         expected: 240,       why: '4h × 60 = 240' },
-  { hours: 6,         expected: 360,       why: '6h × 60 = 360 ≈ DAY_W(340)' },
-  { hours: 8,         expected: 480,       why: '8h × 60 = 480 ≈ 1.4 dnia' },
-  { hours: 12,        expected: 720,       why: '12h × 60 = 720 ≈ 2 dni' },
-  { hours: 60,        expected: MAX_WIDTH, why: 'extreme → cap' },
+  { hours: undefined, expected: 220, why: 'no hours → min' },
+  { hours: 0,         expected: 220, why: '0h → min' },
+  { hours: 0.5,       expected: 220, why: '<1h → min (baseline)' },
+  { hours: 1,         expected: 220, why: '1h = baseline (everything fits)' },
+  { hours: 2,         expected: 280, why: '1h baseline + 60 = 280' },
+  { hours: 3,         expected: 340, why: '+ 2*60 = 340' },
+  { hours: 4,         expected: 400, why: '+ 3*60 = 400' },
+  { hours: 6,         expected: 520, why: '+ 5*60 = 520' },
+  { hours: 8,         expected: 640, why: '+ 7*60 = 640' },
+  { hours: 12,        expected: 880, why: '+ 11*60 = 880 (~2.5d)' },
+  { hours: 60,        expected: 3000,why: 'extreme → MAX cap' },
 ];
 
 let pass = 0, fail = 0;
@@ -32,13 +33,4 @@ for (const c of cases) {
   console.log(`${c.hours}\t${actual}\t${c.expected}\t${ok ? 'PASS' : 'FAIL'}\t${c.why}`);
 }
 console.log(`\n${pass}/${pass + fail} pass`);
-
-// Sanity-check: proporcje (3h powinno być 3× szersze od 1h jak >= baseline)
-const w1 = widthForHours(1);
-const w3 = widthForHours(3);
-const w6 = widthForHours(6);
-console.log(`\nProporcje (1h=${w1}, 3h=${w3}, 6h=${w6}):`);
-console.log(`  3h/1h = ${(w3/w1).toFixed(2)} (cel: ~3, ale 1h przy minimum więc ratio może być niższy)`);
-console.log(`  6h/3h = ${(w6/w3).toFixed(2)} (cel: 2.0 — dwa razy więcej godzin = dwa razy szersze)`);
-
 process.exit(fail > 0 ? 1 : 0);

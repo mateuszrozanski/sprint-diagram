@@ -157,16 +157,11 @@ export function buildNodesFromAdo(
       const phaseId = `${pbi.id}-p${i}`;
       const isParallel = !!phase.parallel;
 
+      // Tylko intra-PBI handoff (Development → Testing tego samego PBI). Cross-PBI
+      // dependsOn pomijamy w schedulerze — wizualne strzałki rysowane osobno niżej.
       const deps = new Set<string>();
-      if (!isParallel) {
-        if (i > 0) {
-          deps.add(`${pbi.id}-p${i - 1}`);
-        } else if (pbi.dependsOn?.length) {
-          for (const depId of pbi.dependsOn) {
-            const depPbi = sorted.find(p => p.id === depId);
-            if (depPbi) deps.add(`${depId}-p${depPbi.phases.length - 1}`);
-          }
-        }
+      if (!isParallel && i > 0) {
+        deps.add(`${pbi.id}-p${i - 1}`);
       }
 
       // depsMap exposed downstream (handoff edges, drag service).
@@ -200,19 +195,39 @@ export function buildNodesFromAdo(
   const pending = new Set<string>(stubs.map(s => s.id));
 
   while (pending.size > 0) {
-    // Każda faza zawsze "ready" do schedule'owania — nie czekamy na cross-dev
-    // dependencies. Intra-PBI sequencing pozostaje w `depsMap` (handoff edges
-    // wizualne), ale nie wpływa na placement. To gwarantuje że żaden developer
-    // nie ma dziur w swoim wierszu.
+    // Intra-PBI handoff JEST respektowany: Testing dla PBI X nie może startować
+    // przed końcem Development X. Cross-PBI deps NIE blokują (wizualne tylko).
+    // Tester czeka, ale w międzyczasie może wziąć Testing innego PBI — list
+    // scheduling przepicka tę fazę, której deps są ready i start najmniejszy.
     const ready: { stub: PhaseStub; start: number }[] = [];
     for (const id of pending) {
       const stub = stubById.get(id)!;
+      let depsReady = true;
+      let depEnd = 0;
+      for (const dId of stub.deps) {
+        if (!scheduledEndX.has(dId)) { depsReady = false; break; }
+        depEnd = Math.max(depEnd, scheduledEndX.get(dId)!);
+      }
+      if (!depsReady) continue;
       const devStart = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
-      const start = Math.max(devStart, FIRST_X);
+      const start = Math.max(devStart, depEnd, FIRST_X);
       ready.push({ stub, start });
     }
 
-    if (!ready.length) break;
+    if (!ready.length) {
+      // Dep cycle / orphan — bezpieczny fallback: schedule remaining w cursorze.
+      console.warn('[layout] dep cycle, scheduling remaining flatly');
+      for (const id of pending) {
+        const stub = stubById.get(id)!;
+        const dev = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
+        const w = widthForHours(stub.hours);
+        const { placedX, nextCursor } = placePhase(dev, w);
+        scheduledX.set(id, placedX);
+        scheduledEndX.set(id, placedX + w);
+        devCursorPx.set(stub.assigneeId, nextCursor);
+      }
+      break;
+    }
 
     // Tiebreak: start ASC, bug-before-story, priority ASC, then parent topo (sorted index).
     const pbiOrder = new Map(sorted.map((p, idx) => [p.id, idx]));

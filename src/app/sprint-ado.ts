@@ -331,7 +331,7 @@ export function buildNodesFromAdo(
       sourcePort: 'qa',
       target:     `qa-${pl.parentId}`,
       targetPort: 'qa-in',
-      data:       { edgeType: 'qa' },
+      data:       { edgeType: 'qa', pbiIds: [pl.parentId] },
     });
 
     // Handoff edge: sequential phases only
@@ -345,7 +345,7 @@ export function buildNodesFromAdo(
         sourcePort: 'out',
         target:     pl.id,
         targetPort: 'in',
-        data:       { edgeType: 'handoff', color: pl.parentColor },
+        data:       { edgeType: 'handoff', color: pl.parentColor, pbiIds: [pl.parentId] },
       });
     }
   }
@@ -434,7 +434,7 @@ export function buildNodesFromAdo(
         sourcePort: 'out',
         target:     firstPhaseId,
         targetPort: 'in',
-        data:       { edgeType: 'dep' },
+        data:       { edgeType: 'dep', pbiIds: [depId, pbi.id] },
       });
     }
   }

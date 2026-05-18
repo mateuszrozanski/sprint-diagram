@@ -118,78 +118,157 @@ export function buildNodesFromAdo(
   const allPhases: PhaseLayout[] = [];
   const sorted = topoSort(items);
 
+  // ── 1) Buduj phase stubs (id + deps + metadata) ─────────────────────────
+  interface PhaseStub {
+    id: string;
+    pbi: AdoPbi;
+    phaseIdx: number;
+    assigneeId: string;
+    hours: number | undefined;
+    isParallel: boolean;
+    isHalfDay: boolean;
+    role: string;
+    title: string;
+    parentTitle?: string;
+    deps: Set<string>;
+  }
+
+  const stubs: PhaseStub[] = [];
+  const stubById = new Map<string, PhaseStub>();
+
   for (const pbi of sorted) {
-    // Cross-PBI constraint: faza zacznie się dopiero po końcu wszystkich zależnych PBI.
-    const dependsOnEndPx = (pbi.dependsOn ?? []).reduce((max, depId) =>
-      Math.max(max, pbiLastEndPx.get(depId) ?? 0), 0
-    );
-
-    let prevSeqEndPx = dependsOnEndPx; // tylko sequential phases podbijają tę wartość
-
     for (let i = 0; i < pbi.phases.length; i++) {
-      const phase      = pbi.phases[i];
-      const phaseId    = `${pbi.id}-p${i}`;
-      const assignee   = phase.assigneeId;
-      const isHalfDay  = phase.days === 0.5;
+      const phase = pbi.phases[i];
+      const phaseId = `${pbi.id}-p${i}`;
       const isParallel = !!phase.parallel;
 
-      const w = widthForHours(phase.hours);
-
-      const devCursor  = devCursorPx.get(assignee) ?? FIRST_X;
-      const chainStart = isParallel ? FIRST_X : (prevSeqEndPx > 0 ? prevSeqEndPx + L.PAD : FIRST_X);
-      let x = Math.max(devCursor, chainStart);
-      // Jeśli x trafia w weekend/holiday, przeskocz do najbliższego working dnia.
-      x = skipNonWorkingX(x);
-
-      const endX = x + w;
-
-      devCursorPx.set(assignee, endX + L.PAD);
-      if (!isParallel) prevSeqEndPx = endX;
-      phaseEndPx.set(phaseId, endX);
-
-      // Display-only sprintDay (na podstawie kolumny w której wypada x).
-      const startDay = nearestWorkingSprintDay(x - L.LABEL_W);
-      const endDay   = nearestWorkingSprintDay(endX - L.LABEL_W - 1);
-
-      assigneeMap.set(phaseId, assignee);
-
-      // Parallel phases have no handoff dep; sequential phases chain normally
-      const deps: string[] = [];
+      const deps = new Set<string>();
       if (!isParallel) {
         if (i > 0) {
-          deps.push(`${pbi.id}-p${i - 1}`);
+          deps.add(`${pbi.id}-p${i - 1}`);
         } else if (pbi.dependsOn?.length) {
           for (const depId of pbi.dependsOn) {
             const depPbi = sorted.find(p => p.id === depId);
-            if (depPbi) deps.push(`${depId}-p${depPbi.phases.length - 1}`);
+            if (depPbi) deps.add(`${depId}-p${depPbi.phases.length - 1}`);
           }
         }
       }
-      depsMap.set(phaseId, deps);
 
-      allPhases.push({
-        id:          phaseId,
-        parentId:    pbi.id,
-        parentColor: pbi.color,
-        parentType:  pbi.type,
-        title:       phase.title ?? pbi.title,
-        parentTitle: phase.title ? pbi.title : undefined,
-        role:        phase.role,
-        assigneeId:  assignee,
-        startDay,
-        endDay,
-        phaseIdx:    i,
-        totalPhases: pbi.phases.length,
-        isHalfDay,
+      // depsMap exposed downstream (handoff edges, drag service).
+      depsMap.set(phaseId, [...deps]);
+      assigneeMap.set(phaseId, phase.assigneeId);
+
+      const stub: PhaseStub = {
+        id: phaseId,
+        pbi,
+        phaseIdx: i,
+        assigneeId: phase.assigneeId,
+        hours: phase.hours,
         isParallel,
-        x,
-        width:       w,
-      });
+        isHalfDay: phase.days === 0.5,
+        role: phase.role,
+        title: phase.title ?? pbi.title,
+        parentTitle: phase.title ? pbi.title : undefined,
+        deps,
+      };
+      stubs.push(stub);
+      stubById.set(phaseId, stub);
+    }
+  }
+
+  // ── 2) List scheduling: zawsze pickuj phase ready (deps zaplanowane) ────
+  // z najwcześniejszym możliwym startem. Wypełnia dziury w dev-cursors zamiast
+  // sztywnego trzymania PBI-by-PBI loopa (który zostawiał Aleksandrowi 5-day
+  // gap po cross-PBI zależności od kogoś innego).
+  const scheduledX = new Map<string, number>();
+  const scheduledEndX = new Map<string, number>();
+  const pending = new Set<string>(stubs.map(s => s.id));
+
+  while (pending.size > 0) {
+    const ready: { stub: PhaseStub; start: number }[] = [];
+    for (const id of pending) {
+      const stub = stubById.get(id)!;
+      let depsReady = true;
+      let depEnd = 0;
+      for (const dId of stub.deps) {
+        if (!scheduledEndX.has(dId)) { depsReady = false; break; }
+        depEnd = Math.max(depEnd, scheduledEndX.get(dId)! + L.PAD);
+      }
+      if (!depsReady) continue;
+      const devStart = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
+      const start = Math.max(depEnd, devStart, FIRST_X);
+      ready.push({ stub, start });
     }
 
-    // pbiLastEndPx = najbardziej-w-prawo koniec dowolnej fazy PBI (incl. parallel)
-    const pbiPhases = allPhases.filter(p => p.parentId === pbi.id);
-    pbiLastEndPx.set(pbi.id, Math.max(...pbiPhases.map(p => p.x + p.width)));
+    if (!ready.length) {
+      // Dep cycle / orphan — schedule remaining w kolejce devCursor.
+      console.warn('[layout] dep cycle detected, scheduling remaining flatly');
+      for (const id of pending) {
+        const stub = stubById.get(id)!;
+        const dev = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
+        const w = widthForHours(stub.hours);
+        const x = skipNonWorkingX(dev);
+        scheduledX.set(id, x);
+        scheduledEndX.set(id, x + w);
+        devCursorPx.set(stub.assigneeId, x + w + L.PAD);
+      }
+      break;
+    }
+
+    // Tiebreak: start ASC, bug-before-story, priority ASC, then parent topo (sorted index).
+    const pbiOrder = new Map(sorted.map((p, idx) => [p.id, idx]));
+    ready.sort((a, b) => {
+      if (a.start !== b.start) return a.start - b.start;
+      if (a.stub.pbi.type !== b.stub.pbi.type) {
+        return a.stub.pbi.type === 'Bug' ? -1 : 1;
+      }
+      if (a.stub.pbi.priority !== b.stub.pbi.priority) {
+        return a.stub.pbi.priority - b.stub.pbi.priority;
+      }
+      return (pbiOrder.get(a.stub.pbi.id) ?? 0) - (pbiOrder.get(b.stub.pbi.id) ?? 0);
+    });
+
+    const winner = ready[0];
+    const w = widthForHours(winner.stub.hours);
+    const x = skipNonWorkingX(winner.start);
+    const endX = x + w;
+    scheduledX.set(winner.stub.id, x);
+    scheduledEndX.set(winner.stub.id, endX);
+    devCursorPx.set(winner.stub.assigneeId, endX + L.PAD);
+    pending.delete(winner.stub.id);
+  }
+
+  // ── 3) Materializuj PhaseLayout z policzonymi x/width ───────────────────
+  for (const stub of stubs) {
+    const x = scheduledX.get(stub.id)!;
+    const w = widthForHours(stub.hours);
+    const endX = scheduledEndX.get(stub.id)!;
+    phaseEndPx.set(stub.id, endX);
+
+    const startDay = nearestWorkingSprintDay(x - L.LABEL_W);
+    const endDay   = nearestWorkingSprintDay(endX - L.LABEL_W - 1);
+
+    allPhases.push({
+      id:          stub.id,
+      parentId:    stub.pbi.id,
+      parentColor: stub.pbi.color,
+      parentType:  stub.pbi.type,
+      title:       stub.title,
+      parentTitle: stub.parentTitle,
+      role:        stub.role,
+      assigneeId:  stub.assigneeId,
+      startDay,
+      endDay,
+      phaseIdx:    stub.phaseIdx,
+      totalPhases: stub.pbi.phases.length,
+      isHalfDay:   stub.isHalfDay,
+      isParallel:  stub.isParallel,
+      x,
+      width:       w,
+    });
+
+    const prevPbiEnd = pbiLastEndPx.get(stub.pbi.id) ?? 0;
+    if (endX > prevPbiEnd) pbiLastEndPx.set(stub.pbi.id, endX);
   }
 
   const nodes: DiagramNode[] = [];

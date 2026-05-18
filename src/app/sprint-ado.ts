@@ -1,6 +1,6 @@
 import { ADO_MOCK_PBIS, CALENDAR_SLOTS, INCOMING_BUGS_MOCK, USERS, type AdoPbi, type PBI } from './sprint-data';
 import type { DiagramNode, DiagramEdge } from './sprint-data';
-import { L, getSprintDayOffset, getSlotXOffset, getSlotWidth, getQaWidth, getEffectiveQaWidth, nearestWorkingSprintDay, skipNonWorkingX } from './layout';
+import { L, getSprintDayOffset, getSlotXOffset, getSlotWidth, getQaWidth, getEffectiveQaWidth, getEffectivePbiWidth, nearestWorkingSprintDay, skipNonWorkingX } from './layout';
 import { widthForHours } from './card-width';
 
 // ── Holiday-aware day helpers ────────────────────────────────────────────────
@@ -221,10 +221,11 @@ export function buildNodesFromAdo(
         const stub = stubById.get(id)!;
         const dev = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
         const w = widthForHours(stub.hours);
-        const { placedX, nextCursor } = placePhase(dev, w);
+        const { placedX } = placePhase(dev, w);
+        const effW = getEffectivePbiWidth(placedX, w);
         scheduledX.set(id, placedX);
-        scheduledEndX.set(id, placedX + w);
-        devCursorPx.set(stub.assigneeId, nextCursor);
+        scheduledEndX.set(id, placedX + effW);
+        devCursorPx.set(stub.assigneeId, placedX + effW);
       }
       break;
     }
@@ -244,14 +245,14 @@ export function buildNodesFromAdo(
 
     const winner = ready[0];
     const w = widthForHours(winner.stub.hours);
-    // Respect 6h-per-day capacity. Phase nie mieszcząca się w remaining current day
-    // jest pushowana na początek następnego working dnia (no splitting).
-    // Bez PAD między phases — w przeciwnym razie 4h+2h przekraczają DAY_W o 6px
-    // i 2h niesłusznie skacze na kolejny dzień.
-    const { placedX, nextCursor } = placePhase(winner.start, w);
+    const { placedX } = placePhase(winner.start, w);
+    // VISUAL width = baseW + weekend slots inside span. devCursor MUSI advanceować
+    // o effW, inaczej następna faza wyląduje "w środku" weekendu poprzedniej karty
+    // i nakłada się na nią po pobraniu.
+    const effW = getEffectivePbiWidth(placedX, w);
     scheduledX.set(winner.stub.id, placedX);
-    scheduledEndX.set(winner.stub.id, placedX + w);
-    devCursorPx.set(winner.stub.assigneeId, nextCursor);
+    scheduledEndX.set(winner.stub.id, placedX + effW);
+    devCursorPx.set(winner.stub.assigneeId, placedX + effW);
     pending.delete(winner.stub.id);
   }
 

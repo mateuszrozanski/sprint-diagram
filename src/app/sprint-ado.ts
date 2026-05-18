@@ -292,7 +292,13 @@ export function buildNodesFromAdo(
   const edges: DiagramEdge[] = [];
 
   for (const pl of allPhases) {
-    const userIdx = users.findIndex(u => u.id === pl.assigneeId);
+    // assignee może być dev (users[]) ALBO QA tester ('qa-...' w testerIndex).
+    const testerSubIdx = testerIndex.get(pl.assigneeId);
+    const isQaPhase = testerSubIdx !== undefined;
+    const userIdx = isQaPhase ? -1 : users.findIndex(u => u.id === pl.assigneeId);
+    const rowIdxForY = isQaPhase
+      ? users.length + 1 + (testerSubIdx as number)
+      : (userIdx + 1);
 
     const pbiObj: PBI = {
       id:              pl.id,
@@ -316,7 +322,7 @@ export function buildNodesFromAdo(
       zOrder:   10,
       position: {
         x: pl.x,
-        y: L.HEADER_H + (userIdx + 1) * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),
+        y: L.HEADER_H + rowIdxForY * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),
       },
       autoSize: false,
       size:     { width: pl.width, height: L.NODE_H },

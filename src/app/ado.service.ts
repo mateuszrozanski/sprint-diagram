@@ -121,15 +121,24 @@ export class AdoService {
       finishDate: iterationRaw.finishDate ? new Date(iterationRaw.finishDate) : null,
     } : null;
 
-    const qaTesterNames: Set<string> = new Set(
-      (iterationRaw?.qaTesters ?? []).map((s: string) => s.toLowerCase()),
-    );
+    const qaTesterOriginals: string[] = ((iterationRaw?.qaTesters ?? []) as string[])
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+    const qaTesterNames: Set<string> = new Set(qaTesterOriginals.map(s => s.toLowerCase()));
 
     // Devs from env (ADO_DEVS) — gwarantują że osoba bez tasków też pojawi się na board.
     const seededDevs: { id: string; name: string }[] = ((iterationRaw?.devs ?? []) as string[])
       .map(name => name.trim())
       .filter(Boolean)
       .map(name => ({ id: slugifyUser(name), name }));
+
+    // Testers from env (ADO_QA_TESTERS) — sub-lanes pojawiają się niezależnie od
+    // Custom.QATester ustawionego na PBI. Bez tego osoba w qaTesters ale bez
+    // Custom.QATester pasującego do żadnego PBI nie miała sub-lane.
+    const seededTesters: { id: string; name: string }[] = qaTesterOriginals.map(name => ({
+      id: 'qa-' + slugifyUser(name),
+      name,
+    }));
 
     const pbiIds: number[] = (wiqlResult.workItems ?? []).map((w: any) => w.id);
     if (!pbiIds.length) return { pbis: [], users, testers: [], iteration };
@@ -150,7 +159,7 @@ export class AdoService {
     const allBaselineUsers = [...users, ...seededDevs];
     const usersById   = new Map(allBaselineUsers.map(u => [u.id, u]));
     const usersByName = new Map(allBaselineUsers.map(u => [u.name.toLowerCase(), u]));
-    const testersById = new Map<string, SprintUser>();
+    const testersById = new Map<string, SprintUser>(seededTesters.map(t => [t.id, t]));
 
     function resolveAssignee(rawName: string | undefined): string {
       const name = (rawName ?? '').trim();
@@ -207,13 +216,10 @@ export class AdoService {
         .map((r: any) => String(extractId(r.url)));
 
       // Granularność task — jedna faza per otwarty Task (RemainingWork > 0).
-      // Taski przypisane do dedykowanych QA-testerów pomijamy (są reprezentowane
-      // przez QA card per PBI). Brak otwartych dev-Tasków → fallback z PBI.
+      // Taski QA-testerów też idą jako phases (z assigneeId='qa-...') — wpadną
+      // do QA sub-lane przez testerIndex w sprint-ado.ts.
       const openTasks = openChildTasksFor(pbi);
-      const devTasks = openTasks.filter(t => {
-        const name = t.fields['System.AssignedTo']?.displayName;
-        return !name || !qaTesterNames.has(String(name).toLowerCase());
-      });
+      const devTasks = openTasks;
       // Fallback hours dla PBI bez openTasków — szukamy estymaty na PBI (Effort
        // = story points, lub OriginalEstimate). Inaczej domyślnie 3h (≈0.5d),
        // żeby `widthForHours` mogło policzyć proporcję zamiast wpadać w MIN.

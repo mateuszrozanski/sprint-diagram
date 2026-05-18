@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { NgDiagramModelService } from 'ng-diagram';
 import type { DiagramNode, NodeUpdate } from './sprint-data';
 import { L } from './layout';
-import { transitiveDependents, resolveCollisions, syncQaNodes, resolveQaCollisions } from './sprint-utils';
+import { transitiveDependents, syncQaNodes, resolveQaCollisions } from './sprint-utils';
 import { SprintService } from './sprint.service';
 import { SprintDataStoreService } from './sprint-data-store.service';
 
@@ -186,10 +186,11 @@ export class DiagramDragService {
 
     const allNodes = this.allNodes();
     const getById  = (id: string) => this.nodeById(id);
-    // Resolve collisions z DEPS ograniczonymi do tego samego PBI — cross-PBI deps
-    // istnieją tylko jako wizualne strzałki, nie powinny cascade'ować w drag/resize.
-    const intraDeps = this.intraPbiDeps();
-    resolveCollisions(updates, allNodes, getById, this.sprint.liveAssignee, intraDeps, this.users());
+    // BEZ resolveCollisions po dragu — to powodowało pchanie wcześniejszych kart
+    // gdy user upuścił późniejszą na ich pozycji. Cards mogą się teraz wizualnie
+    // nakładać (rzadko), ale user explicitly umieścił dropowaną kartę gdzie chciał.
+    // QA-card follow-along + QA collision sweep zostają — to są derived positions,
+    // nie user intent.
     syncQaNodes(updates, allNodes, getById);
     resolveQaCollisions(updates, allNodes);
 

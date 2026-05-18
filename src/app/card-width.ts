@@ -26,7 +26,9 @@ export const CARD_WIDTH = {
  * skutkuje 1-dniowym spanem (day++ włącza się dopiero gdy worked < workDays).
  */
 function spanDays(hours: number): number {
-  const halfDays = Math.max(0.5, Math.round((hours / HOURS_PER_DAY) * 2) / 2);
+  // Ceil — musi pasować do `hoursToDays` w ado.service.ts (ceil, nie round).
+  // 7h → 1.5d span (czyli 2 dni layoutu po `computeEndDay`).
+  const halfDays = Math.max(0.5, Math.ceil((hours / HOURS_PER_DAY) * 2) / 2);
   return Math.ceil(halfDays);
 }
 

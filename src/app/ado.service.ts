@@ -34,9 +34,13 @@ function extractId(url: string): number {
   return parseInt(url.split('/').pop()!, 10);
 }
 
-/** Zaokrąglenie do najbliższych 0.5 dnia (minimum 0.5) */
+/**
+ * Zaokrąglenie W GÓRĘ do najbliższych 0.5 dnia (minimum 0.5).
+ * Ceil (nie round!) — 7h to >1 dzień pracy, musi zająć 2 dni layoutu, inaczej
+ * następna faza tego samego deva nachodzi na poprzednią.
+ */
 function hoursToDays(hours: number): number {
-  return Math.max(0.5, Math.round((hours / HOURS_PER_DAY) * 2) / 2);
+  return Math.max(0.5, Math.ceil((hours / HOURS_PER_DAY) * 2) / 2);
 }
 
 function isTask(item: any): boolean {

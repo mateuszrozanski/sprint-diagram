@@ -143,6 +143,9 @@ export class AdoService {
     function resolveTester(rawName: string | undefined): { id: string; name: string } | undefined {
       const name = (rawName ?? '').trim();
       if (!name) return undefined;
+      // Tylko testerzy z listy sprintowej (ADO_QA_TESTERS env). Custom.QATester w ADO
+      // może wskazywać kogoś spoza zespołu — ignorujemy żeby nie tworzyć fałszywej swimlane.
+      if (!qaTesterNames.has(name.toLowerCase())) return undefined;
       const id = 'qa-' + slugifyUser(name);
       if (!testersById.has(id)) testersById.set(id, { id, name });
       return { id, name };

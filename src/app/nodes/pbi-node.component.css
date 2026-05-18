@@ -59,8 +59,8 @@
 .info-btn,
 .scope-btn {
   background: transparent; border: none; color: #888; cursor: pointer;
-  font-size: 14px; padding: 0 4px; flex-shrink: 0;
-  border-radius: 50%; width: 22px; height: 22px;
+  font-size: 12px; padding: 0; flex-shrink: 0;
+  border-radius: 50%; width: 18px; height: 18px;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .info-btn:hover,
@@ -98,9 +98,9 @@
 .avatars { display: flex; gap: 3px; }
 
 .avatar {
-  width: 22px; height: 22px; border-radius: 50%;
+  width: 18px; height: 18px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 9px; font-weight: 800; color: rgba(255,255,255,0.95);
+  font-size: 8px; font-weight: 800; color: rgba(255,255,255,0.95);
   flex-shrink: 0;
 }
 

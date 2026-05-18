@@ -2,7 +2,7 @@
 
 const DAY_W         = 340;
 const HOURS_PER_DAY = 6;
-const MIN_WIDTH     = 130;
+const MIN_WIDTH     = 180;
 const PX_PER_HOUR   = DAY_W / HOURS_PER_DAY; // 56.6666...
 const MAX_WIDTH     = 3000;
 
@@ -13,12 +13,12 @@ function widthForHours(hours) {
 }
 
 const cases = [
-  { hours: undefined, expected: 130,  why: 'no hours → min' },
-  { hours: 0,         expected: 130,  why: '0h → min' },
-  { hours: 0.5,       expected: 130,  why: '0.5h: 28 → MIN 130' },
-  { hours: 1,         expected: 130,  why: '1h: 57 → MIN 130' },
-  { hours: 2,         expected: 130,  why: '2h: 113 → MIN 130' },
-  { hours: 3,         expected: 170,  why: '3h: round(3 × 56.67) = 170 (50% kolumny)' },
+  { hours: undefined, expected: 180,  why: 'no hours → min' },
+  { hours: 0,         expected: 180,  why: '0h → min' },
+  { hours: 0.5,       expected: 180,  why: '0.5h → MIN 180' },
+  { hours: 1,         expected: 180,  why: '1h: 57 → MIN 180' },
+  { hours: 2,         expected: 180,  why: '2h: 113 → MIN 180' },
+  { hours: 3,         expected: 180,  why: '3h: 170 → MIN 180' },
   { hours: 4,         expected: 227,  why: '4h: 227 (67% kolumny)' },
   { hours: 5,         expected: 283,  why: '5h: 283 (83% kolumny)' },
   { hours: 6,         expected: 340,  why: '6h: 340 = DAY_W (1 kolumna)' },

@@ -763,6 +763,13 @@ export class AppComponent implements AfterViewInit {
 
       await this.applyStateToBoard(stateToApply);
       this.lastSavedJson = JSON.stringify(this.snapshotState());
+
+      // W live mode po pokazaniu cache'a ładujemy świeże dane z ADO, żeby
+      // nadpisać ewentualnie nieaktualne pozycje/szerokości (formuła layoutu
+      // mogła się zmienić od ostatniego zapisu live cache na serwerze).
+      if (!useWhatIf) {
+        this.loadFromAdo().catch(() => {});
+      }
     } catch (err) {
       console.warn('[state] restore failed', err);
     }
@@ -1017,6 +1024,11 @@ export class AppComponent implements AfterViewInit {
 
     const { nodes, edges, assigneeMap, depsMap } = buildNodesFromAdo(pbis, users, testers);
     this.sprint.applyMaps(assigneeMap, depsMap);
+
+    // Sprzątamy poprzednio dodane PBI/QA/edges przed wrzuceniem nowych.
+    // Bez tego drugi+ call do loadFromAdo robił stack duplikatów na tych samych ID-kach.
+    if (this.loadedNodeIds.length) this.modelService.deleteNodes(this.loadedNodeIds);
+    if (this.loadedEdgeIds.length) this.modelService.deleteEdges(this.loadedEdgeIds);
 
     this.loadedNodeIds = nodes.map(n => n.id);
     this.loadedEdgeIds = edges.map(e => e.id);

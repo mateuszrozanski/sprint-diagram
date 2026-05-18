@@ -43,10 +43,26 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
     this.uiBus.toggleHighlight(this.displayId());
   }
 
-  /** Czy ta karta należy do aktualnie podświetlonego PBI? */
+  /**
+   * Klik w body karty (nie w button) — toggluje highlight scope. Dzięki temu
+   * nie trzeba mierzyć w mały ⊙ przy bug-cards czy wąskich kartach.
+   */
+  protected onCardClick(e: MouseEvent): void {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button')) return; // info-btn / scope-btn obsługują się same
+    if (target?.closest('.resize-handle, .port, .avatar')) return;
+    this.uiBus.toggleHighlight(this.displayId());
+  }
+
+  /** Czy ta karta należy do podświetlonego scope (target PBI + cross-PBI deps)? */
   protected isScopeHighlighted = computed(() => {
-    const hi = this.uiBus.highlightedPbiId();
-    return hi !== null && hi === this.displayId();
+    const ids = this.uiBus.highlightedPbiIds();
+    return ids !== null && ids.has(this.displayId());
+  });
+
+  /** Czy ⊙ jest "aktywne" (target PBI tej karty)? */
+  protected isScopeTarget = computed(() => {
+    return this.uiBus.highlightedPbiId() === this.displayId();
   });
 
   protected color     = computed(() => this.node().data['color']    as string);

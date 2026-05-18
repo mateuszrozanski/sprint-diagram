@@ -1,6 +1,7 @@
 <div class="pbi-card"
      [class.blocked]="isBlocked()"
      [class.scope-highlight]="isScopeHighlighted()"
+     [class.scope-target]="isScopeTarget()"
      [attr.data-diff-flag]="node().data['diffFlag']"
      [attr.data-whatif-modified]="node().data['whatifModified']"
      [style.width.px]="effectiveWidth()"
@@ -8,7 +9,8 @@
      [style.opacity]="node().data['filterOpacity'] ?? 1"
      [style.--accent]="color()"
      [style.--state-color]="stateColor()"
-     [style.background]="cardBackground()">
+     [style.background]="cardBackground()"
+     (click)="onCardClick($event)">
 
   <!-- Left accent bar (parent PBI color) + state stripe na prawym brzegu accent-bara -->
   <div class="accent-bar" [style.background]="color()"></div>
@@ -30,7 +32,7 @@
         }
       </div>
       <button class="scope-btn"
-              [class.active]="isScopeHighlighted()"
+              [class.active]="isScopeTarget()"
               (pointerdown)="$event.stopPropagation()"
               (click)="toggleScope($event)"
               title="Highlight all cards of this PBI">⊙</button>

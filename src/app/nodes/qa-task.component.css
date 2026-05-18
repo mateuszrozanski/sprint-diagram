@@ -11,6 +11,11 @@
   transition: border-color 0.12s;
 }
 .qa-card:hover { border-color: #13a10e; }
+.qa-card.scope-highlight {
+  border-color: #ffb74d;
+  box-shadow: 0 0 0 2px rgba(255, 183, 77, 0.55), 0 4px 14px rgba(255, 183, 77, 0.35);
+  z-index: 5;
+}
 
 .accent-bar {
   width: 4px; flex-shrink: 0; align-self: stretch;

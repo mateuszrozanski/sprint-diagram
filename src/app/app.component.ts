@@ -66,6 +66,54 @@ export class AppComponent implements AfterViewInit {
   private   readonly adoService    = inject(AdoService);
   private   readonly uiBus         = inject(UiBusService);
 
+  // Po toggle scope-highlight na karcie (uiBus.highlightedPbiId) — liczymy
+  // wszystkie powiązane displayId (cross-PBI deps w obie strony) i wystawiamy
+  // na uiBus.highlightedPbiIds, żeby każdy pbi-node / qa-task mógł sprawdzić
+  // czy do siebie należy.
+  private readonly _scopeHighlightEffect = effect(() => {
+    const target = this.uiBus.highlightedPbiId();
+    if (!target) {
+      this.uiBus.highlightedPbiIds.set(null);
+      return;
+    }
+    this.uiBus.highlightedPbiIds.set(this.computeRelatedPbiIds(target));
+  });
+
+  private computeRelatedPbiIds(pbiId: string): Set<string> {
+    const related = new Set<string>([pbiId]);
+    const nodes = this.modelService.nodes() as DiagramNode[];
+    const phaseToPbi = new Map<string, string>();
+    for (const n of nodes) {
+      if (n.type !== 'pbi') continue;
+      phaseToPbi.set(n.id, n.data?.['displayId'] as string);
+    }
+    const targetPhases: string[] = [];
+    for (const [phaseId, pId] of phaseToPbi) {
+      if (pId === pbiId) targetPhases.push(phaseId);
+    }
+    const reverseDeps = new Map<string, string[]>();
+    for (const [phaseId, deps] of this.sprint.liveDeps) {
+      for (const d of deps) {
+        if (!reverseDeps.has(d)) reverseDeps.set(d, []);
+        reverseDeps.get(d)!.push(phaseId);
+      }
+    }
+    const queue = [...targetPhases];
+    const seen = new Set<string>(targetPhases);
+    while (queue.length) {
+      const cur = queue.shift()!;
+      const next = [...(this.sprint.liveDeps.get(cur) ?? []), ...(reverseDeps.get(cur) ?? [])];
+      for (const n of next) {
+        if (seen.has(n)) continue;
+        seen.add(n);
+        queue.push(n);
+        const pid = phaseToPbi.get(n);
+        if (pid) related.add(pid);
+      }
+    }
+    return related;
+  }
+
   // Reagujemy na żądanie z karty (przycisk ⓘ) — otwieramy details panel.
   private readonly _openDetailsEffect = effect(() => {
     const node = this.uiBus.openDetailsForNode();

@@ -1,6 +1,8 @@
 <div class="qa-card"
+     [class.scope-highlight]="isScopeHighlighted()"
      [style.width.px]="width()"
-     [style.height.px]="height()">
+     [style.height.px]="height()"
+     (click)="onCardClick($event)">
   <div class="accent-bar" [style.background]="color()"></div>
 
   <div class="card-body">

@@ -33,11 +33,15 @@
   align-self: stretch;
 }
 
-/* Scope highlight = wszystkie karty tego samego PBI po toggle z scope-btn */
+/* Scope highlight = karta jest w obrębie aktualnego scope (target + cross-PBI deps) */
 .pbi-card.scope-highlight {
   border-color: #ffb74d;
-  box-shadow: 0 0 0 2px rgba(255, 183, 77, 0.55), 0 4px 14px rgba(255, 183, 77, 0.35);
+  box-shadow: 0 0 0 2px rgba(255, 183, 77, 0.45), 0 4px 14px rgba(255, 183, 77, 0.25);
   z-index: 5;
+}
+/* Scope target = bezpośrednio klikalna karta (ten sam PBI), mocniejszy podkład. */
+.pbi-card.scope-target {
+  box-shadow: 0 0 0 3px rgba(255, 183, 77, 0.85), 0 6px 18px rgba(255, 183, 77, 0.5);
 }
 
 /* Blocked = pulsująca czerwona ramka */

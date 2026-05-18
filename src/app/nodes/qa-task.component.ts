@@ -22,6 +22,20 @@ export class QaTaskComponent implements NgDiagramNodeTemplate {
     this.uiBus.openDetailsForNode.set(this.node());
   }
 
+  protected pbiId = computed(() => this.node().data['pbiId'] as string);
+
+  protected onCardClick(e: MouseEvent): void {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button')) return;
+    if (target?.closest('.port')) return;
+    this.uiBus.toggleHighlight(this.pbiId());
+  }
+
+  protected isScopeHighlighted = computed(() => {
+    const ids = this.uiBus.highlightedPbiIds();
+    return ids !== null && ids.has(this.pbiId());
+  });
+
   protected color  = computed(() => this.node().data['color'] as string);
   protected height = computed(() => this.node().data['height'] as number);
 

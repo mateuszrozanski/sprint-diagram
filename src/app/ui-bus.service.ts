@@ -9,8 +9,15 @@ import type { DiagramNode } from './sprint-data';
 export class UiBusService {
   readonly openDetailsForNode = signal<DiagramNode | null>(null);
 
-  /** displayId (PBI id) wszystkich kart które mają zostać podświetlone — toggle z karty. */
+  /** displayId głównego PBI (target) — wpisywane przez kliknięcie ⊙ na karcie. */
   readonly highlightedPbiId = signal<string | null>(null);
+
+  /**
+   * Set wszystkich displayId które powinny być podświetlone (target + powiązane
+   * cross-PBI deps + QA). Ustawiane przez `app.component` na podstawie
+   * `highlightedPbiId` + dependency graph.
+   */
+  readonly highlightedPbiIds = signal<ReadonlySet<string> | null>(null);
 
   toggleHighlight(pbiId: string): void {
     this.highlightedPbiId.set(this.highlightedPbiId() === pbiId ? null : pbiId);

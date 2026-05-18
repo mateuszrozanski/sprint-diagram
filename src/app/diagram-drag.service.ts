@@ -35,25 +35,30 @@ export class DiagramDragService {
   private nodeById(id: string) { return this.modelService.getNodeById(id) as DiagramNode | null; }
 
   /**
-   * Anti-overlap dla dragged cards. Każda dragged karta w danym wierszu jest
-   * pushowana w PRAWO past każdy static card, na który nachodzi. Iteruje aż
-   * nie ma overlapów. Static cards NIE są ruszane — user celowo drag-uje
-   * konkretną kartę.
+   * Anti-overlap dla dragged cards z TEMPORALNYM kierunkiem:
+   * - Static card która ORYGINALNIE była PO dragged (origin.x większe) jest
+   *   pushowana w prawo gdy dragged na nią nachodzi.
+   * - Static card która oryginalnie była PRZED dragged zostaje na miejscu —
+   *   user celowo przesunął późniejszą kartę i nie chce ruszać wcześniejszych.
+   * Push może kaskadować (s pushed → kolejne staticy z większymi origin też mogą
+   * być pushowane).
    */
   private pushDraggedOutOfStatic(
     updates: NodeUpdate[],
     allNodes: DiagramNode[],
     draggedIds: ReadonlySet<string>,
   ): void {
-    type Pos = { x: number; y: number; w: number; isDragged: boolean };
+    type Pos = { x: number; y: number; w: number; isDragged: boolean; originX: number };
     const posMap = new Map<string, Pos>();
     for (const n of allNodes) {
       if (n.type !== 'pbi') continue;
+      const origin = this.dragOrigins.get(n.id);
       posMap.set(n.id, {
         x: n.position.x,
         y: n.position.y,
         w: (n.data['width'] as number) ?? 200,
         isDragged: draggedIds.has(n.id),
+        originX: origin?.x ?? n.position.x,
       });
     }
     for (const u of updates) {
@@ -64,35 +69,62 @@ export class DiagramDragService {
       if (u.size?.width !== undefined) p.w = u.size.width;
       if (u.data?.['width'] !== undefined) p.w = u.data['width'] as number;
     }
-    // Bucket by row.
     const byRow = new Map<number, [string, Pos][]>();
     for (const [id, p] of posMap) {
       const rowKey = Math.round(p.y / L.ROW_H);
       if (!byRow.has(rowKey)) byRow.set(rowKey, []);
       byRow.get(rowKey)!.push([id, p]);
     }
+    const writeUpdate = (id: string, p: Pos) => {
+      const u = updates.find(uu => uu.id === id);
+      if (u) {
+        if (u.position) u.position = { ...u.position, x: p.x };
+        else            u.position = { x: p.x, y: p.y };
+      } else {
+        updates.push({ id, position: { x: p.x, y: p.y } });
+      }
+    };
     for (const row of byRow.values()) {
-      const statics = row.filter(([, p]) => !p.isDragged).map(([, p]) => ({ x: p.x, w: p.w })).sort((a, b) => a.x - b.x);
-      const draggeds = row.filter(([, p]) => p.isDragged);
-      for (const [id, p] of draggeds) {
-        let changed = true;
-        let safety = 0;
-        while (changed && safety++ < 50) {
-          changed = false;
-          for (const s of statics) {
-            if (p.x < s.x + s.w + L.PAD && p.x + p.w > s.x) {
-              p.x = s.x + s.w + L.PAD;
-              changed = true;
+      // Iteruj do stabilizacji — pushy mogą kaskadować.
+      let globalChanged = true;
+      let safety = 0;
+      while (globalChanged && safety++ < 100) {
+        globalChanged = false;
+        // Cards w wierszu sorted by current x.
+        row.sort((a, b) => a[1].x - b[1].x);
+        for (let i = 0; i < row.length - 1; i++) {
+          const [aId, a] = row[i];
+          const [bId, b] = row[i + 1];
+          if (a.x + a.w + L.PAD <= b.x) continue; // brak overlapu
+          // Overlap: A jest leftmost. Decydujemy kogo ruszamy.
+          if (b.isDragged && !a.isDragged) {
+            // Dragged spadł za static — push dragged dalej w prawo.
+            b.x = a.x + a.w + L.PAD;
+            writeUpdate(bId, b);
+            globalChanged = true;
+          } else if (!b.isDragged && a.isDragged) {
+            // Dragged przed static-iem. Static was originally after dragged? Push.
+            if (b.originX >= a.originX) {
+              b.x = a.x + a.w + L.PAD;
+              writeUpdate(bId, b);
+              globalChanged = true;
+            }
+            // else: static oryginalnie był wcześniej — nie ruszamy (user nawalił
+            // dragged na wcześniejszego, accept visual overlap).
+          } else if (a.isDragged && b.isDragged) {
+            // Oba dragged — push later (b) by current x.
+            b.x = a.x + a.w + L.PAD;
+            writeUpdate(bId, b);
+            globalChanged = true;
+          } else {
+            // Oba static — to nie powinno się zdarzyć ale safety: push b o ile
+            // origin był >= a.origin (nie tworzymy nowych konfliktów).
+            if (b.originX >= a.originX) {
+              b.x = a.x + a.w + L.PAD;
+              writeUpdate(bId, b);
+              globalChanged = true;
             }
           }
-        }
-        // Zapisz zmianę do updates.
-        const u = updates.find(uu => uu.id === id);
-        if (u) {
-          if (u.position) u.position = { ...u.position, x: p.x };
-          else            u.position = { x: p.x, y: p.y };
-        } else {
-          updates.push({ id, position: { x: p.x, y: p.y } });
         }
       }
     }

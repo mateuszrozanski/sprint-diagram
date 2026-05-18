@@ -179,16 +179,29 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
       const nodeById = (id: string) => this.modelService.getNodeById(id) as DiagramNode | null;
       const allNodes = this.modelService.nodes() as DiagramNode[];
 
+      // Cascade resize: tylko intra-PBI (Development → Testing tego samego PBI).
+      // Cross-PBI deps są tylko wizualne — niezależne karty innych devów nie ruszają.
+      const myPbi = this.node().data['displayId'] as string | undefined;
+      const intraDeps = new Map<string, string[]>();
+      for (const [phaseId, deps] of this.sprint.liveDeps) {
+        const phasePbi = nodeById(phaseId)?.data?.['displayId'] as string | undefined;
+        if (!phasePbi) continue;
+        const intra = deps.filter(d => {
+          const depPbi = nodeById(d)?.data?.['displayId'] as string | undefined;
+          return depPbi === phasePbi;
+        });
+        if (intra.length) intraDeps.set(phaseId, intra);
+      }
       const delta = newW - startW;
-      if (delta !== 0) {
-        for (const depId of transitiveDependents([nodeId], this.sprint.liveDeps)) {
+      if (delta !== 0 && myPbi) {
+        for (const depId of transitiveDependents([nodeId], intraDeps)) {
           const dep = nodeById(depId);
           if (!dep) continue;
           updates.push({ id: depId, position: { x: dep.position.x + delta, y: dep.position.y } });
         }
       }
 
-      resolveCollisions(updates, allNodes, nodeById, this.sprint.liveAssignee, this.sprint.liveDeps, users);
+      resolveCollisions(updates, allNodes, nodeById, this.sprint.liveAssignee, intraDeps, users);
       syncQaNodes(updates, allNodes, nodeById);
       resolveQaCollisions(updates, allNodes);
       this.modelService.updateNodes(updates);

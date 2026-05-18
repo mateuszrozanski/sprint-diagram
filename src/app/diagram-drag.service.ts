@@ -33,6 +33,22 @@ export class DiagramDragService {
 
   private allNodes()           { return this.modelService.nodes() as DiagramNode[]; }
   private nodeById(id: string) { return this.modelService.getNodeById(id) as DiagramNode | null; }
+
+  /** liveDeps przefiltrowane do tylko intra-PBI handoff-ów (Development → Testing).
+   *  Cross-PBI deps są pomijane — wizualne tylko, nie cascadują w drag/resize. */
+  private intraPbiDeps(): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    for (const [phaseId, deps] of this.sprint.liveDeps) {
+      const phasePbi = this.nodeById(phaseId)?.data?.['displayId'] as string | undefined;
+      if (!phasePbi) continue;
+      const intra = deps.filter(d => {
+        const depPbi = this.nodeById(d)?.data?.['displayId'] as string | undefined;
+        return depPbi === phasePbi;
+      });
+      if (intra.length) out.set(phaseId, intra);
+    }
+    return out;
+  }
   private users()              { return this.dataStore.users(); }
 
   // ── 1. Drag started ────────────────────────────────────────────────────────
@@ -45,7 +61,21 @@ export class DiagramDragService {
       }
     }
     this.activeDragIds = event.nodes.filter(n => n.type === 'pbi').map(n => n.id);
-    this.cascadeIds    = transitiveDependents(this.activeDragIds, this.sprint.liveDeps);
+    // Drag-cascade ograniczamy do tego samego PBI (handoff: Development → Testing).
+    // Cross-PBI deps NIE pociągają niczego — user explicitly drag-uje konkretną
+    // kartę i nie chce ruszać niezależnych prac innych devów.
+    const draggedPbiIds = new Set(
+      this.activeDragIds
+        .map(id => this.nodeById(id)?.data?.['displayId'] as string | undefined)
+        .filter((v): v is string => !!v),
+    );
+    const allCascade = transitiveDependents(this.activeDragIds, this.sprint.liveDeps);
+    this.cascadeIds = new Set(
+      [...allCascade].filter(id => {
+        const dispId = this.nodeById(id)?.data?.['displayId'] as string | undefined;
+        return dispId !== undefined && draggedPbiIds.has(dispId);
+      }),
+    );
 
     const draggedFirst = event.nodes.find(n => n.type === 'pbi');
     const draggedNode  = draggedFirst ? this.nodeById(draggedFirst.id) : null;
@@ -156,7 +186,10 @@ export class DiagramDragService {
 
     const allNodes = this.allNodes();
     const getById  = (id: string) => this.nodeById(id);
-    resolveCollisions(updates, allNodes, getById, this.sprint.liveAssignee, this.sprint.liveDeps, this.users());
+    // Resolve collisions z DEPS ograniczonymi do tego samego PBI — cross-PBI deps
+    // istnieją tylko jako wizualne strzałki, nie powinny cascade'ować w drag/resize.
+    const intraDeps = this.intraPbiDeps();
+    resolveCollisions(updates, allNodes, getById, this.sprint.liveAssignee, intraDeps, this.users());
     syncQaNodes(updates, allNodes, getById);
     resolveQaCollisions(updates, allNodes);
 

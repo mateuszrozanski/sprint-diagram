@@ -103,11 +103,10 @@ export function buildNodesFromAdo(
   const depsMap     = new Map<string, string[]>();
 
   // Px-based packing per dev. Karta zajmuje TYLKO tyle px ile godzin × proporcja,
-  // bez zaokrąglania do całego dnia. 4h = 227px (~67% kolumny), 6h = 340px (full
-  // kolumna). Wymiar zgodny z `widthForHours()`.
-  // FIRST_X = LABEL_W (bez PAD) — żeby pełny 6h task starting Monday exactly
-  // wypełnił kolumnę, a 4h+2h też się w niej zmieściło.
-  const FIRST_X = L.LABEL_W;
+  // bez zaokrąglania do całego dnia.
+  // Day 1 sprintu = planowanie + retro, devs nie pracują. Phases startują od day 2:
+  // FIRST_X = LABEL_W + DAY_W.
+  const FIRST_X = L.LABEL_W + L.DAY_W;
   const devCursorPx  = new Map<string, number>(users.map(u => [u.id, FIRST_X]));
   const pbiLastEndPx = new Map<string, number>();
   const phaseEndPx   = new Map<string, number>();

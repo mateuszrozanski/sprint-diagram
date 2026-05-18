@@ -183,11 +183,22 @@ export class AppComponent implements AfterViewInit {
     // Stale widths/heights — saved state może pochodzić z poprzedniej formuły
     // widthForHours/NODE_H. Liczymy poprawne wartości z `phaseHours` zanim wrzucimy
     // do modelu, żeby karty nie nakładały się na siebie.
+    // Plus `autoSize: false` + `size` — bez tego ng-diagram NodeSizeDirective dla
+    // custom node type resetuje inline width i wszystkie karty mają jednolitą
+    // (content-based) szerokość. Saved state nie ma tych pól.
     for (const n of restoredNodes) {
-      if (n.type !== 'pbi' || !n.data) continue;
-      const hours = n.data['phaseHours'] as number | undefined;
-      n.data.width  = widthForHours(hours);
-      n.data.height = L.NODE_H;
+      if (!n.data) continue;
+      if (n.type === 'pbi') {
+        const hours = n.data['phaseHours'] as number | undefined;
+        n.data.width  = widthForHours(hours);
+        n.data.height = L.NODE_H;
+        n.autoSize = false;
+        n.size = { width: n.data.width, height: L.NODE_H };
+      } else if (n.type === 'qa-task') {
+        n.data.height = L.NODE_H;
+        n.autoSize = false;
+        n.size = { width: n.data.width ?? 328, height: L.NODE_H };
+      }
     }
     this.modelService.addNodes(restoredNodes);
     this.modelService.addEdges(restoredEdges);

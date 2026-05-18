@@ -304,6 +304,8 @@ export interface DiagramNode {
   data: Record<string, unknown>;
   selected?: boolean;
   draggable?: boolean;
+  autoSize?: boolean;
+  size?: { width: number; height: number };
 }
 
 export interface DiagramEdge {

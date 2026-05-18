@@ -359,6 +359,12 @@ export function buildNodesFromAdo(
         x: pl.x,
         y: L.HEADER_H + (userIdx + 1) * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),
       },
+      // autoSize=false + size = explicit — bez tego ng-diagram NodeSizeDirective
+      // dla custom node type ('pbi') RESETUJE inline width z `[style.width.px]`
+      // (applyAutoSize → resetExplicitSizes), więc wszystkie karty miały content-width
+      // = uniform 220px.
+      autoSize: false,
+      size:     { width: pl.width, height: L.NODE_H },
       data: {
         ...pbiObj,
         width:       pl.width,
@@ -428,6 +434,8 @@ export function buildNodesFromAdo(
         x: qaX,
         y: L.HEADER_H + qaRowIndex * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),
       },
+      autoSize: false,
+      size:     { width: Math.max(getQaWidth(), 120), height: L.NODE_H },
       data: {
         pbiId,
         pbiTitle:   pbi?.title ?? '',
@@ -520,6 +528,8 @@ export function buildIncomingBugs(bugs: AdoPbi[] = INCOMING_BUGS_MOCK): {
       type:     'pbi',
       zOrder:   10,
       position: { x, y: incomingY },
+      autoSize: false,
+      size:     { width, height: L.NODE_H },
       data: {
         id:              phaseId,
         displayId:       bug.id,
@@ -546,6 +556,8 @@ export function buildIncomingBugs(bugs: AdoPbi[] = INCOMING_BUGS_MOCK): {
       type:     'qa-task',
       zOrder:   10,
       position: { x: x + width + L.PAD, y: incomingY },
+      autoSize: false,
+      size:     { width: getQaWidth(), height: L.NODE_H },
       data: {
         pbiId:  bug.id,
         color:  bug.color,

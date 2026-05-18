@@ -34,6 +34,70 @@ export class DiagramDragService {
   private allNodes()           { return this.modelService.nodes() as DiagramNode[]; }
   private nodeById(id: string) { return this.modelService.getNodeById(id) as DiagramNode | null; }
 
+  /**
+   * Anti-overlap dla dragged cards. Każda dragged karta w danym wierszu jest
+   * pushowana w PRAWO past każdy static card, na który nachodzi. Iteruje aż
+   * nie ma overlapów. Static cards NIE są ruszane — user celowo drag-uje
+   * konkretną kartę.
+   */
+  private pushDraggedOutOfStatic(
+    updates: NodeUpdate[],
+    allNodes: DiagramNode[],
+    draggedIds: ReadonlySet<string>,
+  ): void {
+    type Pos = { x: number; y: number; w: number; isDragged: boolean };
+    const posMap = new Map<string, Pos>();
+    for (const n of allNodes) {
+      if (n.type !== 'pbi') continue;
+      posMap.set(n.id, {
+        x: n.position.x,
+        y: n.position.y,
+        w: (n.data['width'] as number) ?? 200,
+        isDragged: draggedIds.has(n.id),
+      });
+    }
+    for (const u of updates) {
+      const p = posMap.get(u.id);
+      if (!p) continue;
+      if (u.position?.x !== undefined) p.x = u.position.x;
+      if (u.position?.y !== undefined) p.y = u.position.y;
+      if (u.size?.width !== undefined) p.w = u.size.width;
+      if (u.data?.['width'] !== undefined) p.w = u.data['width'] as number;
+    }
+    // Bucket by row.
+    const byRow = new Map<number, [string, Pos][]>();
+    for (const [id, p] of posMap) {
+      const rowKey = Math.round(p.y / L.ROW_H);
+      if (!byRow.has(rowKey)) byRow.set(rowKey, []);
+      byRow.get(rowKey)!.push([id, p]);
+    }
+    for (const row of byRow.values()) {
+      const statics = row.filter(([, p]) => !p.isDragged).map(([, p]) => ({ x: p.x, w: p.w })).sort((a, b) => a.x - b.x);
+      const draggeds = row.filter(([, p]) => p.isDragged);
+      for (const [id, p] of draggeds) {
+        let changed = true;
+        let safety = 0;
+        while (changed && safety++ < 50) {
+          changed = false;
+          for (const s of statics) {
+            if (p.x < s.x + s.w + L.PAD && p.x + p.w > s.x) {
+              p.x = s.x + s.w + L.PAD;
+              changed = true;
+            }
+          }
+        }
+        // Zapisz zmianę do updates.
+        const u = updates.find(uu => uu.id === id);
+        if (u) {
+          if (u.position) u.position = { ...u.position, x: p.x };
+          else            u.position = { x: p.x, y: p.y };
+        } else {
+          updates.push({ id, position: { x: p.x, y: p.y } });
+        }
+      }
+    }
+  }
+
   /** liveDeps przefiltrowane do tylko intra-PBI handoff-ów (Development → Testing).
    *  Cross-PBI deps są pomijane — wizualne tylko, nie cascadują w drag/resize. */
   private intraPbiDeps(): Map<string, string[]> {
@@ -186,11 +250,16 @@ export class DiagramDragService {
 
     const allNodes = this.allNodes();
     const getById  = (id: string) => this.nodeById(id);
-    // BEZ resolveCollisions po dragu — to powodowało pchanie wcześniejszych kart
-    // gdy user upuścił późniejszą na ich pozycji. Cards mogą się teraz wizualnie
-    // nakładać (rzadko), ale user explicitly umieścił dropowaną kartę gdzie chciał.
-    // QA-card follow-along + QA collision sweep zostają — to są derived positions,
-    // nie user intent.
+
+    // Anti-overlap: dragged cards są pushowane W PRAWO past static cards w tym
+    // samym wierszu. Static cards (nie-draggedds) zostają na miejscu — user
+    // explicitly drag-uje jedną kartę i nie chce ruszać innych.
+    const draggedIds = new Set<string>([
+      ...event.nodes.filter(n => n.type === 'pbi').map(n => n.id),
+      ...this.cascadeIds,
+    ]);
+    this.pushDraggedOutOfStatic(updates, allNodes, draggedIds);
+
     syncQaNodes(updates, allNodes, getById);
     resolveQaCollisions(updates, allNodes);
 

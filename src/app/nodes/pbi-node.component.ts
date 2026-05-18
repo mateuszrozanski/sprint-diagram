@@ -159,7 +159,14 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
       dragged = true;
       const newW = calcW(clientX);
       const n    = this.node();
-      this.modelService.updateNodes([{ id: n.id, position: n.position, data: { ...n.data, width: newW } }]);
+      // size MUSI być updateowany — ng-diagram trzyma autoSize=false node z size,
+      // i bez nowego size nie odświeży host bounding box ani port positions.
+      this.modelService.updateNodes([{
+        id: n.id,
+        position: n.position,
+        size: { width: newW, height: L.NODE_H },
+        data: { ...n.data, width: newW },
+      }]);
     };
 
     const onUp = (e: Event) => {
@@ -174,7 +181,12 @@ export class PbiNodeComponent implements NgDiagramNodeTemplate {
       const n       = this.node();
       const users   = this.dataStore.users();
 
-      const updates: NodeUpdate[] = [{ id: nodeId, position: n.position, data: { ...n.data, width: newW } }];
+      const updates: NodeUpdate[] = [{
+        id: nodeId,
+        position: n.position,
+        size: { width: newW, height: L.NODE_H },
+        data: { ...n.data, width: newW },
+      }];
 
       const nodeById = (id: string) => this.modelService.getNodeById(id) as DiagramNode | null;
       const allNodes = this.modelService.nodes() as DiagramNode[];

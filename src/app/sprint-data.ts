@@ -324,6 +324,7 @@ export interface NodeUpdate {
   id: string;
   position?: DiagramPosition;
   data?: Record<string, unknown>;
+  size?: { width: number; height: number };
 }
 
 export interface SprintStats { stories: number; bugs: number; incoming: number }

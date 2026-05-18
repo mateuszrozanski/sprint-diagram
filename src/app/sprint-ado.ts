@@ -1,6 +1,6 @@
 import { ADO_MOCK_PBIS, CALENDAR_SLOTS, INCOMING_BUGS_MOCK, USERS, type AdoPbi, type PBI } from './sprint-data';
 import type { DiagramNode, DiagramEdge } from './sprint-data';
-import { L, getSprintDayOffset, getQaWidth, getEffectiveQaWidth, nearestWorkingSprintDay, skipNonWorkingX } from './layout';
+import { L, getSprintDayOffset, getSlotXOffset, getSlotWidth, getQaWidth, getEffectiveQaWidth, nearestWorkingSprintDay, skipNonWorkingX } from './layout';
 import { widthForHours } from './card-width';
 
 // ── Holiday-aware day helpers ────────────────────────────────────────────────
@@ -13,6 +13,57 @@ function nextWorkingDay(day: number): number {
     day++;
   }
   return day;
+}
+
+/**
+ * Place a phase honoring "1 working day = 6h" capacity per dev.
+ * If the phase doesn't fit in what's left of the current sprint-day column,
+ * push it to the next working day (no splitting). Phases bigger than 1 day
+ * are allowed to span multiple days from a day-start.
+ *
+ * Wraca placedX (gdzie postawić kartę) i nextCursor (gdzie zaczyna się
+ * następna faza tego deva).
+ */
+function placeWithinDay(cursorX: number, phaseWidth: number): { placedX: number; nextCursor: number } {
+  let x = skipNonWorkingX(cursorX);
+
+  // Find slot containing x, check fit; iterate if push needed.
+  for (let safety = 0; safety < 100; safety++) {
+    let acc = L.LABEL_W;
+    let foundSlot = -1;
+    let slotLeft = acc;
+    let slotRight = acc;
+    for (let i = 0; i < CALENDAR_SLOTS.length; i++) {
+      const slotW = CALENDAR_SLOTS[i].isWeekend ? L.WKND_W : L.DAY_W;
+      const left = acc;
+      const right = acc + slotW;
+      if (x >= left && x < right) {
+        foundSlot = i;
+        slotLeft = left;
+        slotRight = right;
+        break;
+      }
+      acc += slotW;
+    }
+    if (foundSlot < 0) {
+      // Past sprint end — just accept.
+      return { placedX: x, nextCursor: x + phaseWidth };
+    }
+    if (CALENDAR_SLOTS[foundSlot].isNonWorking) {
+      x = slotRight;
+      continue;
+    }
+    const remaining = slotRight - x;
+    const atDayStart = x <= slotLeft + 1; // bez tolerancji PAD — phase starts exactly na day-edge
+    if (phaseWidth <= remaining || atDayStart) {
+      // Fits in remaining day budget, OR phase starts at day-start so jest OK żeby
+      // pociągnąć ją multi-day.
+      return { placedX: x, nextCursor: x + phaseWidth };
+    }
+    // Doesn't fit; push to next slot boundary.
+    x = slotRight;
+  }
+  return { placedX: x, nextCursor: x + phaseWidth };
 }
 
 /**
@@ -89,9 +140,11 @@ export function buildNodesFromAdo(
   const depsMap     = new Map<string, string[]>();
 
   // Px-based packing per dev. Karta zajmuje TYLKO tyle px ile godzin × proporcja,
-  // bez zaokrąglania do całego dnia. 4h = 240px (~70% kolumny), 7h = 420px (~1.25
-  // kolumny). Wymiar zgodny z `widthForHours()`.
-  const FIRST_X = L.LABEL_W + L.PAD;
+  // bez zaokrąglania do całego dnia. 4h = 227px (~67% kolumny), 6h = 340px (full
+  // kolumna). Wymiar zgodny z `widthForHours()`.
+  // FIRST_X = LABEL_W (bez PAD) — żeby pełny 6h task starting Monday exactly
+  // wypełnił kolumnę, a 4h+2h też się w niej zmieściło.
+  const FIRST_X = L.LABEL_W;
   const devCursorPx  = new Map<string, number>(users.map(u => [u.id, FIRST_X]));
   const pbiLastEndPx = new Map<string, number>();
   const phaseEndPx   = new Map<string, number>();
@@ -192,7 +245,9 @@ export function buildNodesFromAdo(
       let depEnd = 0;
       for (const dId of stub.deps) {
         if (!scheduledEndX.has(dId)) { depsReady = false; break; }
-        depEnd = Math.max(depEnd, scheduledEndX.get(dId)! + L.PAD);
+        // Bez +PAD — `placeWithinDay` zajmie się day-boundary, a wewnątrz dnia
+        // chcemy żeby phase B startowała exactly tam gdzie phase A się skończyła.
+        depEnd = Math.max(depEnd, scheduledEndX.get(dId)!);
       }
       if (!depsReady) continue;
       const devStart = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
@@ -207,10 +262,10 @@ export function buildNodesFromAdo(
         const stub = stubById.get(id)!;
         const dev = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
         const w = widthForHours(stub.hours);
-        const x = skipNonWorkingX(dev);
-        scheduledX.set(id, x);
-        scheduledEndX.set(id, x + w);
-        devCursorPx.set(stub.assigneeId, x + w + L.PAD);
+        const { placedX, nextCursor } = placeWithinDay(dev, w);
+        scheduledX.set(id, placedX);
+        scheduledEndX.set(id, placedX + w);
+        devCursorPx.set(stub.assigneeId, nextCursor);
       }
       break;
     }
@@ -230,11 +285,14 @@ export function buildNodesFromAdo(
 
     const winner = ready[0];
     const w = widthForHours(winner.stub.hours);
-    const x = skipNonWorkingX(winner.start);
-    const endX = x + w;
-    scheduledX.set(winner.stub.id, x);
-    scheduledEndX.set(winner.stub.id, endX);
-    devCursorPx.set(winner.stub.assigneeId, endX + L.PAD);
+    // Respect 6h-per-day capacity. Phase nie mieszcząca się w remaining current day
+    // jest pushowana na początek następnego working dnia (no splitting).
+    // Bez PAD między phases — w przeciwnym razie 4h+2h przekraczają DAY_W o 6px
+    // i 2h niesłusznie skacze na kolejny dzień.
+    const { placedX, nextCursor } = placeWithinDay(winner.start, w);
+    scheduledX.set(winner.stub.id, placedX);
+    scheduledEndX.set(winner.stub.id, placedX + w);
+    devCursorPx.set(winner.stub.assigneeId, nextCursor);
     pending.delete(winner.stub.id);
   }
 

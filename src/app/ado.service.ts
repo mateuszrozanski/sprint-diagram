@@ -192,6 +192,17 @@ export class AdoService {
         const name = t.fields['System.AssignedTo']?.displayName;
         return !name || !qaTesterNames.has(String(name).toLowerCase());
       });
+      // Fallback hours dla PBI bez openTasków — szukamy estymaty na PBI (Effort
+       // = story points, lub OriginalEstimate). Inaczej domyślnie 3h (≈0.5d),
+       // żeby `widthForHours` mogło policzyć proporcję zamiast wpadać w MIN.
+      const fallbackHours = (() => {
+        const effort = fields['Microsoft.VSTS.Scheduling.Effort'];
+        if (typeof effort === 'number' && effort > 0) return effort;
+        const orig = fields['Microsoft.VSTS.Scheduling.OriginalEstimate'];
+        if (typeof orig === 'number' && orig > 0) return orig;
+        return 3;
+      })();
+
       const phases: AdoPbi['phases'] = devTasks.length
         ? devTasks.map(t => {
             const hours = t.fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number;
@@ -205,10 +216,9 @@ export class AdoService {
           })
         : [{
             // Brak otwartych dev tasków = PBI w code review / QA / done.
-            // Pokazujemy jako minimalną kartkę (0.5 d) — min-width i tak zrobi
-            // ją czytelną, ale nie kradnie 8 dni kalendarza.
             assigneeId: resolveAssignee(fields['System.AssignedTo']?.displayName),
-            days:       0.5,
+            days:       hoursToDays(fallbackHours),
+            hours:      fallbackHours,
             role:       'Dev',
           }];
 

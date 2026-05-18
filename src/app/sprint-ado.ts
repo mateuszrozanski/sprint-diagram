@@ -238,37 +238,19 @@ export function buildNodesFromAdo(
   const pending = new Set<string>(stubs.map(s => s.id));
 
   while (pending.size > 0) {
+    // Każda faza zawsze "ready" do schedule'owania — nie czekamy na cross-dev
+    // dependencies. Intra-PBI sequencing pozostaje w `depsMap` (handoff edges
+    // wizualne), ale nie wpływa na placement. To gwarantuje że żaden developer
+    // nie ma dziur w swoim wierszu.
     const ready: { stub: PhaseStub; start: number }[] = [];
     for (const id of pending) {
       const stub = stubById.get(id)!;
-      let depsReady = true;
-      let depEnd = 0;
-      for (const dId of stub.deps) {
-        if (!scheduledEndX.has(dId)) { depsReady = false; break; }
-        // Bez +PAD — `placeWithinDay` zajmie się day-boundary, a wewnątrz dnia
-        // chcemy żeby phase B startowała exactly tam gdzie phase A się skończyła.
-        depEnd = Math.max(depEnd, scheduledEndX.get(dId)!);
-      }
-      if (!depsReady) continue;
       const devStart = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
-      const start = Math.max(depEnd, devStart, FIRST_X);
+      const start = Math.max(devStart, FIRST_X);
       ready.push({ stub, start });
     }
 
-    if (!ready.length) {
-      // Dep cycle / orphan — schedule remaining w kolejce devCursor.
-      console.warn('[layout] dep cycle detected, scheduling remaining flatly');
-      for (const id of pending) {
-        const stub = stubById.get(id)!;
-        const dev = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
-        const w = widthForHours(stub.hours);
-        const { placedX, nextCursor } = placeWithinDay(dev, w);
-        scheduledX.set(id, placedX);
-        scheduledEndX.set(id, placedX + w);
-        devCursorPx.set(stub.assigneeId, nextCursor);
-      }
-      break;
-    }
+    if (!ready.length) break;
 
     // Tiebreak: start ASC, bug-before-story, priority ASC, then parent topo (sorted index).
     const pbiOrder = new Map(sorted.map((p, idx) => [p.id, idx]));

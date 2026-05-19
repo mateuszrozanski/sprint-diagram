@@ -473,30 +473,26 @@ export function buildNodesFromAdo(
     }
   }
 
-  // Defensywny anti-overlap sweep — jeśli scheduler / placement gdziekolwiek
-  // wygenerował nakładające się PBI w tym samym wierszu, push w prawo.
-  // Stories i Testing nigdy nie mogą się nachodzić.
-  const pbiNodesByRow = new Map<number, DiagramNode[]>();
+  // Defensywny anti-overlap sweep — KAŻDA karta (PBI + QA-task anchor) w tym
+  // samym wierszu pushowana w prawo aż brak nakładania. effW uwzględnia weekend
+  // extension. NACZELNA REGUŁA: żadna karta nie nakłada się na inną.
+  const cardsByRow = new Map<number, DiagramNode[]>();
   for (const n of nodes) {
-    if (n.type !== 'pbi') continue;
+    if (n.type !== 'pbi' && n.type !== 'qa-task') continue;
     const key = Math.round(n.position.y / L.ROW_H);
-    if (!pbiNodesByRow.has(key)) pbiNodesByRow.set(key, []);
-    pbiNodesByRow.get(key)!.push(n);
+    if (!cardsByRow.has(key)) cardsByRow.set(key, []);
+    cardsByRow.get(key)!.push(n);
   }
-  for (const row of pbiNodesByRow.values()) {
+  for (const row of cardsByRow.values()) {
     row.sort((a, b) => a.position.x - b.position.x);
     for (let i = 1; i < row.length; i++) {
       const prev = row[i - 1];
       const curr = row[i];
-      const prevBaseW = (prev.data['width'] as number) ?? 200;
-      // Używamy effective width (z doliczonymi weekendami w span) — inaczej
-      // card przechodzący przez weekend wyciąga wizualnie poza prevW i kolejny
-      // card wpada w jej obszar.
+      const prevBaseW = (prev.data['width'] as number) ?? (prev.size?.width as number) ?? 200;
       const prevEffW = getEffectivePbiWidth(prev.position.x, prevBaseW);
       const minX = prev.position.x + prevEffW + L.PAD;
       if (curr.position.x < minX) {
         curr.position = { ...curr.position, x: minX };
-        if (curr.size) curr.size = { ...curr.size };
       }
     }
   }

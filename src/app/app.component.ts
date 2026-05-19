@@ -869,7 +869,9 @@ export class AppComponent implements AfterViewInit {
     type Row = { id: string; x: number; w: number; node: any };
     const byRow = new Map<number, Row[]>();
     for (const n of nodes) {
-      if (n.type !== 'pbi') continue;
+      // PBI i QA-task anchor — oba typy mogą lądować w tym samym row (QA sub-lane)
+      // i muszą respektować NACZELNĄ REGUŁĘ: żadnego overlapu.
+      if (n.type !== 'pbi' && n.type !== 'qa-task') continue;
       const y = n.position?.y ?? 0;
       const w = (n.data?.width as number) ?? (n.size?.width as number) ?? 200;
       const x = n.position?.x ?? 0;

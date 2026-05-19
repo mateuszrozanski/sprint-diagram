@@ -209,7 +209,7 @@ export class AdoService {
       return out;
     }
 
-    const pbis: AdoPbi[] = pbiItems.map(pbi => {
+    const pbis: AdoPbi[] = pbiItems.map((pbi): AdoPbi | null => {
       const fields    = pbi.fields;
       const type      = fields['System.WorkItemType'] === 'Bug' ? 'Bug' : 'Story';
       const priority  = fields['Microsoft.VSTS.Common.Priority'] ?? 3;
@@ -223,16 +223,6 @@ export class AdoService {
       // do QA sub-lane przez testerIndex w sprint-ado.ts.
       const openTasks = openChildTasksFor(pbi);
       const devTasks = openTasks;
-      // Fallback hours dla PBI bez openTasków — szukamy estymaty na PBI (Effort
-       // = story points, lub OriginalEstimate). Inaczej domyślnie 3h (≈0.5d),
-       // żeby `widthForHours` mogło policzyć proporcję zamiast wpadać w MIN.
-      const fallbackHours = (() => {
-        const effort = fields['Microsoft.VSTS.Scheduling.Effort'];
-        if (typeof effort === 'number' && effort > 0) return effort;
-        const orig = fields['Microsoft.VSTS.Scheduling.OriginalEstimate'];
-        if (typeof orig === 'number' && orig > 0) return orig;
-        return 3;
-      })();
 
       // ── Grupowanie tasków po (activity, assignee) ─────────────────────
       // Zamiast 1 karty per task (kompletnie nieczytelne przy 5-10 tasków),
@@ -273,26 +263,21 @@ export class AdoService {
         return { ...g, label: `${g.activity}${suffix}` };
       });
 
-      const phases: AdoPbi['phases'] = labeledGroups.length
-        ? labeledGroups.map(g => ({
-            assigneeId:       g.assigneeId,
-            days:             hoursToDays(g.hours),
-            hours:            g.hours,
-            role:             g.activity,
-            title:            g.titles.length > 1
-                                ? `${g.label} (${g.titles.length} tasks)`
-                                : g.label,
-            groupTaskTitles:  g.titles,
-          }))
-        : [{
-            // PBI bez open dev-tasks (np. w code review / QA) — pokazujemy jako
-            // jedną kartę "Development" z estymaty PBI.
-            assigneeId: resolveAssignee(fields['System.AssignedTo']?.displayName),
-            days:       hoursToDays(fallbackHours),
-            hours:      fallbackHours,
-            role:       'Development',
-            title:      'Development',
-          }];
+      // Brak otwartych dev tasków → PBI nie renderujemy. RemainingWork=0 oznacza
+      // że praca dev jest zrobiona; pokazywanie OriginalEstimate/Effort byłoby
+      // mylące (board pokazywałby godziny które już są spalone).
+      if (!labeledGroups.length) return null;
+
+      const phases: AdoPbi['phases'] = labeledGroups.map(g => ({
+        assigneeId:       g.assigneeId,
+        days:             hoursToDays(g.hours),
+        hours:            g.hours,
+        role:             g.activity,
+        title:            g.titles.length > 1
+                            ? `${g.label} (${g.titles.length} tasks)`
+                            : g.label,
+        groupTaskTitles:  g.titles,
+      }));
 
       const tester = resolveTester(fields['Custom.QATester']?.displayName);
 
@@ -308,7 +293,7 @@ export class AdoService {
         qaTesterName: tester?.name,
         state:        fields['System.State'] as string | undefined,
       };
-    });
+    }).filter((p): p is AdoPbi => p !== null);
 
     return {
       pbis,

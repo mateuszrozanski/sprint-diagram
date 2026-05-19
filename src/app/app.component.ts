@@ -225,6 +225,10 @@ export class AppComponent implements AfterViewInit {
       setSprintCalendar(new Date(y, m - 1, d2), state.sprint.days);
     }
     if (state.sprint?.iteration) this.currentSprint.set(state.sprint.iteration);
+    // Override z env (ADO_QA_TESTERS / ADO_DEVS) zanim zbudujemy lanes — żeby
+    // testerzy/devy promoted w env od razu pojawili się jako lane labels, bez
+    // race condition gdzie cache pokazuje stary skład.
+    await this.refreshIterationData();
     this.rebuildLanes();
     const restoredNodes = (state.nodes ?? []).filter((n: any) => !laneIds.has(n.id));
     const restoredEdges = state.edges ?? [];
@@ -805,11 +809,12 @@ export class AppComponent implements AfterViewInit {
   }
 
   /**
-   * Lightweight fetch jen iteration metadata (qaTesters / devs lists z env)
-   * i refresh testers + users baseline + lanes. Używane w whatif mode po restore
-   * żeby świeże QA/dev seeds pojawiły się bez rebuildu kart.
+   * Lightweight fetch iteration metadata (qaTesters / devs lists z env) i
+   * override testers + users baseline. NIE woła `rebuildLanes()` — caller
+   * powinien zrobić to po, używając już zaktualizowanych signal-i. Inaczej
+   * cache→env→cache race tworzy migotanie / brak label-i.
    */
-  private async refreshIterationLanes(): Promise<void> {
+  private async refreshIterationData(): Promise<void> {
     try {
       const res = await fetch('/api/ado/iteration');
       if (!res.ok) return;
@@ -821,17 +826,20 @@ export class AppComponent implements AfterViewInit {
 
       const devNames = ((it.devs ?? []) as string[]).map(s => s.trim()).filter(Boolean);
       const existing = this.dataStore.users();
-      const ids = new Set(existing.map(u => u.id));
-      const merged = [...existing];
+      // Remove devs z `existing` którzy są teraz testerami — inaczej Damian
+      // siedział w obu lanach (dev + QA) → wizualnie podwójny label.
+      const testerIds = new Set(seededTesters.map(t => t.id));
+      const existingTrimmed = existing.filter(u => !testerIds.has('qa-' + u.id));
+      const ids = new Set(existingTrimmed.map(u => u.id));
+      const merged = [...existingTrimmed];
       for (const name of devNames) {
         const id = slugifyUser(name);
+        if (testerIds.has('qa-' + id)) continue; // nie wracaj testera do dev list
         if (!ids.has(id)) { merged.push({ id, name }); ids.add(id); }
       }
       this.dataStore.setUsers(merged);
-
-      this.rebuildLanes();
     } catch (err) {
-      console.warn('[refreshIterationLanes] failed', err);
+      console.warn('[refreshIterationData] failed', err);
     }
   }
 
@@ -857,12 +865,10 @@ export class AppComponent implements AfterViewInit {
       // W live mode po pokazaniu cache'a ładujemy świeże dane z ADO, żeby
       // nadpisać ewentualnie nieaktualne pozycje/szerokości (formuła layoutu
       // mogła się zmienić od ostatniego zapisu live cache na serwerze).
+      // Whatif mode pominięty — `applyStateToBoard` już zrobił `refreshIterationData`
+      // przed buildem lanes, więc env-seeded testers/devs są na miejscu.
       if (!useWhatIf) {
         this.loadFromAdo().catch(() => {});
-      } else {
-        // Whatif: nie ruszamy kart, ale lanes (devs + QA testerów) refreshujemy
-        // z `/api/ado/iteration` żeby Alicja/Damian z env pojawili się od razu.
-        this.refreshIterationLanes().catch(() => {});
       }
     } catch (err) {
       console.warn('[state] restore failed', err);

@@ -126,10 +126,11 @@ export class AdoService {
       .filter(Boolean);
     const qaTesterNames: Set<string> = new Set(qaTesterOriginals.map(s => s.toLowerCase()));
 
-    // Devs from env (ADO_DEVS) — gwarantują że osoba bez tasków też pojawi się na board.
+    // Devs from env (ADO_DEVS). Exclude anyone już w qaTesters — promotion do QA
+    // overrules ADO_DEVS, inaczej osoba ma dwie swimlane (dev + QA).
     const seededDevs: { id: string; name: string }[] = ((iterationRaw?.devs ?? []) as string[])
       .map(name => name.trim())
-      .filter(Boolean)
+      .filter(name => !!name && !qaTesterNames.has(name.toLowerCase()))
       .map(name => ({ id: slugifyUser(name), name }));
 
     // Testers from env (ADO_QA_TESTERS) — sub-lanes pojawiają się niezależnie od
@@ -154,9 +155,11 @@ export class AdoService {
     const taskItems = taskIds.length ? await fetchItems(taskIds) : [];
     const taskMap   = new Map<number, any>(taskItems.map(t => [t.id, t]));
 
-    // Merge: caller-passed users + ADO_DEVS env seed. Devs z env idą jako baseline,
-    // nawet jeśli nie mają tasków w bieżącym sprincie.
-    const allBaselineUsers = [...users, ...seededDevs];
+    // Merge: caller-passed users + ADO_DEVS env seed (qa-tester names już
+    // odfiltrowane wyżej). Devs z env idą jako baseline, nawet jeśli nie mają
+    // tasków w bieżącym sprincie.
+    const allBaselineUsers = [...users, ...seededDevs]
+      .filter(u => !qaTesterNames.has(u.name.toLowerCase()));
     const usersById   = new Map(allBaselineUsers.map(u => [u.id, u]));
     const usersByName = new Map(allBaselineUsers.map(u => [u.name.toLowerCase(), u]));
     const testersById = new Map<string, SprintUser>(seededTesters.map(t => [t.id, t]));

@@ -814,32 +814,65 @@ export class AppComponent implements AfterViewInit {
    * powinien zrobić to po, używając już zaktualizowanych signal-i. Inaczej
    * cache→env→cache race tworzy migotanie / brak label-i.
    */
+  private static readonly ITERATION_CACHE_KEY = 'sprint:iteration_seed:v1';
+
+  /** Load last-known qaTesters/devs from localStorage. Used jako fallback gdy
+   *  ADO iteration fetch zawiedzie (cold start, network glitch). */
+  private loadCachedIterationSeed(): { qaTesters: string[]; devs: string[] } {
+    try {
+      const raw = localStorage.getItem(AppComponent.ITERATION_CACHE_KEY);
+      if (!raw) return { qaTesters: [], devs: [] };
+      const parsed = JSON.parse(raw);
+      return {
+        qaTesters: Array.isArray(parsed.qaTesters) ? parsed.qaTesters : [],
+        devs:      Array.isArray(parsed.devs)      ? parsed.devs      : [],
+      };
+    } catch { return { qaTesters: [], devs: [] }; }
+  }
+
+  private saveCachedIterationSeed(qaTesters: string[], devs: string[]): void {
+    try {
+      localStorage.setItem(AppComponent.ITERATION_CACHE_KEY, JSON.stringify({ qaTesters, devs }));
+    } catch {}
+  }
+
+  private applyIterationSeed(qaTesterNames: string[], devNames: string[]): void {
+    const cleanedTesters = qaTesterNames.map(s => s.trim()).filter(Boolean);
+    const seededTesters = cleanedTesters.map(name => ({ id: 'qa-' + slugifyUser(name), name }));
+    this.testers.set(seededTesters);
+
+    const cleanedDevs = devNames.map(s => s.trim()).filter(Boolean);
+    const existing = this.dataStore.users();
+    const testerIds = new Set(seededTesters.map(t => t.id));
+    const existingTrimmed = existing.filter(u => !testerIds.has('qa-' + u.id));
+    const ids = new Set(existingTrimmed.map(u => u.id));
+    const merged = [...existingTrimmed];
+    for (const name of cleanedDevs) {
+      const id = slugifyUser(name);
+      if (testerIds.has('qa-' + id)) continue;
+      if (!ids.has(id)) { merged.push({ id, name }); ids.add(id); }
+    }
+    this.dataStore.setUsers(merged);
+  }
+
   private async refreshIterationData(): Promise<void> {
+    // 1) Najpierw cache localStorage z poprzedniej sesji — żeby labels pojawiły
+    //    się NATYCHMIAST nawet jeśli ADO iteration fetch jest cold/wolny/zawiedzie.
+    const cached = this.loadCachedIterationSeed();
+    if (cached.qaTesters.length || cached.devs.length) {
+      this.applyIterationSeed(cached.qaTesters, cached.devs);
+    }
+    // 2) Świeży fetch z ADO — override gdy się powiedzie + zapis do localStorage.
     try {
       const res = await fetch('/api/ado/iteration');
       if (!res.ok) return;
       const it = await res.json();
-
-      const qaTesterNames = ((it.qaTesters ?? []) as string[]).map(s => s.trim()).filter(Boolean);
-      const seededTesters = qaTesterNames.map(name => ({ id: 'qa-' + slugifyUser(name), name }));
-      this.testers.set(seededTesters);
-
-      const devNames = ((it.devs ?? []) as string[]).map(s => s.trim()).filter(Boolean);
-      const existing = this.dataStore.users();
-      // Remove devs z `existing` którzy są teraz testerami — inaczej Damian
-      // siedział w obu lanach (dev + QA) → wizualnie podwójny label.
-      const testerIds = new Set(seededTesters.map(t => t.id));
-      const existingTrimmed = existing.filter(u => !testerIds.has('qa-' + u.id));
-      const ids = new Set(existingTrimmed.map(u => u.id));
-      const merged = [...existingTrimmed];
-      for (const name of devNames) {
-        const id = slugifyUser(name);
-        if (testerIds.has('qa-' + id)) continue; // nie wracaj testera do dev list
-        if (!ids.has(id)) { merged.push({ id, name }); ids.add(id); }
-      }
-      this.dataStore.setUsers(merged);
+      const qaTesters = ((it.qaTesters ?? []) as string[]);
+      const devs      = ((it.devs ?? []) as string[]);
+      this.applyIterationSeed(qaTesters, devs);
+      this.saveCachedIterationSeed(qaTesters, devs);
     } catch (err) {
-      console.warn('[refreshIterationData] failed', err);
+      console.warn('[refreshIterationData] failed, using cached seed if any', err);
     }
   }
 

@@ -846,9 +846,21 @@ export class AppComponent implements AfterViewInit {
   private async restoreFromServer(): Promise<void> {
     try {
       const res = await fetch('/api/state');
-      if (!res.ok) return;
+      if (!res.ok) {
+        // Backend nieosiągalny → i tak załaduj z ADO, żeby env-seeded lanes
+        // (Alicja, Damian) pojawiły się.
+        this.mode.set('live');
+        this.loadFromAdo().catch(() => {});
+        return;
+      }
       const { live, whatif, whatifAgeSec } = await res.json();
-      if (!live) return;
+      if (!live) {
+        // Brak cache'a — fresh load z ADO żeby lanes + cards zbudować od zera
+        // z aktualnego env (testers/devs).
+        this.mode.set('live');
+        this.loadFromAdo().catch(() => {});
+        return;
+      }
 
       this.liveStateCache.set(live);
 
@@ -872,6 +884,10 @@ export class AppComponent implements AfterViewInit {
       }
     } catch (err) {
       console.warn('[state] restore failed', err);
+      // Każdy unexpected error → spróbuj fresh load z ADO. Bez tego user ląduje
+      // na pustej board z empty testers.
+      this.mode.set('live');
+      this.loadFromAdo().catch(() => {});
     }
   }
 

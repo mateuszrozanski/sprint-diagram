@@ -67,7 +67,7 @@ function activityFromTask(task: any): string {
   return 'Development';
 }
 
-function slugifyUser(displayName: string): string {
+export function slugifyUser(displayName: string): string {
   const slug = displayName
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()

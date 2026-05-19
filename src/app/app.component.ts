@@ -42,7 +42,7 @@ import { SprintService }              from './sprint.service';
 import { SprintDataStoreService }     from './sprint-data-store.service';
 import { SprintEditorPanelComponent } from './editor/sprint-editor-panel.component';
 import { DiagramDragService }         from './diagram-drag.service';
-import { AdoService }                 from './ado.service';
+import { AdoService, slugifyUser }    from './ado.service';
 import { UiBusService }                from './ui-bus.service';
 import { effect }                       from '@angular/core';
 
@@ -804,6 +804,37 @@ export class AppComponent implements AfterViewInit {
     return SPRINT_DAYS;
   }
 
+  /**
+   * Lightweight fetch jen iteration metadata (qaTesters / devs lists z env)
+   * i refresh testers + users baseline + lanes. Używane w whatif mode po restore
+   * żeby świeże QA/dev seeds pojawiły się bez rebuildu kart.
+   */
+  private async refreshIterationLanes(): Promise<void> {
+    try {
+      const res = await fetch('/api/ado/iteration');
+      if (!res.ok) return;
+      const it = await res.json();
+
+      const qaTesterNames = ((it.qaTesters ?? []) as string[]).map(s => s.trim()).filter(Boolean);
+      const seededTesters = qaTesterNames.map(name => ({ id: 'qa-' + slugifyUser(name), name }));
+      this.testers.set(seededTesters);
+
+      const devNames = ((it.devs ?? []) as string[]).map(s => s.trim()).filter(Boolean);
+      const existing = this.dataStore.users();
+      const ids = new Set(existing.map(u => u.id));
+      const merged = [...existing];
+      for (const name of devNames) {
+        const id = slugifyUser(name);
+        if (!ids.has(id)) { merged.push({ id, name }); ids.add(id); }
+      }
+      this.dataStore.setUsers(merged);
+
+      this.rebuildLanes();
+    } catch (err) {
+      console.warn('[refreshIterationLanes] failed', err);
+    }
+  }
+
   private async restoreFromServer(): Promise<void> {
     try {
       const res = await fetch('/api/state');
@@ -828,6 +859,10 @@ export class AppComponent implements AfterViewInit {
       // mogła się zmienić od ostatniego zapisu live cache na serwerze).
       if (!useWhatIf) {
         this.loadFromAdo().catch(() => {});
+      } else {
+        // Whatif: nie ruszamy kart, ale lanes (devs + QA testerów) refreshujemy
+        // z `/api/ado/iteration` żeby Alicja/Damian z env pojawili się od razu.
+        this.refreshIterationLanes().catch(() => {});
       }
     } catch (err) {
       console.warn('[state] restore failed', err);

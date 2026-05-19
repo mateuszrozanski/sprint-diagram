@@ -57,7 +57,7 @@ function countWorkingDays(start: Date, finish: Date): number {
 }
 import { buildNodesFromAdo, buildIncomingBugs } from './sprint-ado';
 import { widthForHours } from './card-width';
-import { L, getTotalWidth } from './layout';
+import { L, getTotalWidth, getEffectivePbiWidth } from './layout';
 import { resolveQaCollisions } from './sprint-utils';
 import type { NodeUpdate } from './sprint-data';
 import { SwimlaneComponent }         from './nodes/swimlane.component';
@@ -882,7 +882,10 @@ export class AppComponent implements AfterViewInit {
       for (let i = 1; i < row.length; i++) {
         const prev = row[i - 1];
         const curr = row[i];
-        const minX = prev.x + prev.w + L.PAD;
+        // Effective width — uwzględnia weekend slots w span. Bez tego card
+        // przechodzący przez weekend nakłada się wizualnie na sąsiada.
+        const prevEffW = getEffectivePbiWidth(prev.x, prev.w);
+        const minX = prev.x + prevEffW + L.PAD;
         if (curr.x < minX) {
           curr.x = minX;
           curr.node.position = { ...curr.node.position, x: minX };

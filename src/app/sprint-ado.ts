@@ -488,8 +488,12 @@ export function buildNodesFromAdo(
     for (let i = 1; i < row.length; i++) {
       const prev = row[i - 1];
       const curr = row[i];
-      const prevW = (prev.data['width'] as number) ?? 200;
-      const minX = prev.position.x + prevW + L.PAD;
+      const prevBaseW = (prev.data['width'] as number) ?? 200;
+      // Używamy effective width (z doliczonymi weekendami w span) — inaczej
+      // card przechodzący przez weekend wyciąga wizualnie poza prevW i kolejny
+      // card wpada w jej obszar.
+      const prevEffW = getEffectivePbiWidth(prev.position.x, prevBaseW);
+      const minX = prev.position.x + prevEffW + L.PAD;
       if (curr.position.x < minX) {
         curr.position = { ...curr.position, x: minX };
         if (curr.size) curr.size = { ...curr.size };

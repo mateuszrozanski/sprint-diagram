@@ -42,8 +42,12 @@
               title="Details">ⓘ</button>
     </div>
 
-    <!-- Title — fills remaining card-body height -->
-    <div class="card-title" [title]="node().data['title']">{{ node().data['title'] }}</div>
+    <!-- Activity label (Development 1 / Testing) — krótki context. -->
+    <div class="card-activity" [title]="node().data['title']">{{ node().data['title'] }}</div>
+    <!-- Parent PBI title — najważniejsze info, pokazuje co tak naprawdę jest robione. -->
+    @if (node().data['parentTitle']) {
+      <div class="card-title" [title]="node().data['parentTitle']">{{ node().data['parentTitle'] }}</div>
+    }
 
     <!-- Markers row: deps + comment indicator -->
     @if (hasDeps() || node().data['hasComment']) {

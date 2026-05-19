@@ -244,8 +244,11 @@ export class AppComponent implements AfterViewInit {
     );
     if (this.loadedNodeIds.length) this.modelService.deleteNodes(this.loadedNodeIds);
     if (this.loadedEdgeIds.length) this.modelService.deleteEdges(this.loadedEdgeIds);
-    if (Array.isArray(state.users))   this.dataStore.setUsers(state.users);
-    if (Array.isArray(state.testers)) this.testers.set(state.testers);
+    // Set tylko jeśli cached state ma niepuste listy — inaczej zostawiamy
+    // localStorage-seeded testers/users na miejscu (puste cache wymazałoby je
+    // i Testing-cards lądowały na y=0 row, stack overlap).
+    if (Array.isArray(state.users)   && state.users.length)   this.dataStore.setUsers(state.users);
+    if (Array.isArray(state.testers) && state.testers.length) this.testers.set(state.testers);
     if (state.sprint?.startISO && state.sprint?.days) {
       const [y, m, d2] = state.sprint.startISO.split('-').map(Number);
       setSprintCalendar(new Date(y, m - 1, d2), state.sprint.days);

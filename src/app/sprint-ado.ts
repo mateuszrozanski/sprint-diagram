@@ -303,6 +303,12 @@ export function buildNodesFromAdo(
     const testerSubIdx = testerIndex.get(pl.assigneeId);
     const isQaPhase = testerSubIdx !== undefined;
     const userIdx = isQaPhase ? -1 : users.findIndex(u => u.id === pl.assigneeId);
+    // Unknown assignee — skip rendering (else card lądowałaby na y=0 = header
+    // row razem z innymi orphan-ami → visual stack overlap).
+    if (!isQaPhase && userIdx < 0) {
+      console.warn(`[buildNodesFromAdo] unknown assignee ${pl.assigneeId} for phase ${pl.id}, skipping`);
+      continue;
+    }
     const rowIdxForY = isQaPhase
       ? users.length + 1 + (testerSubIdx as number)
       : (userIdx + 1);
@@ -464,6 +470,30 @@ export function buildNodesFromAdo(
         targetPort: 'in',
         data:       { edgeType: 'dep', pbiIds: [depId, pbi.id] },
       });
+    }
+  }
+
+  // Defensywny anti-overlap sweep — jeśli scheduler / placement gdziekolwiek
+  // wygenerował nakładające się PBI w tym samym wierszu, push w prawo.
+  // Stories i Testing nigdy nie mogą się nachodzić.
+  const pbiNodesByRow = new Map<number, DiagramNode[]>();
+  for (const n of nodes) {
+    if (n.type !== 'pbi') continue;
+    const key = Math.round(n.position.y / L.ROW_H);
+    if (!pbiNodesByRow.has(key)) pbiNodesByRow.set(key, []);
+    pbiNodesByRow.get(key)!.push(n);
+  }
+  for (const row of pbiNodesByRow.values()) {
+    row.sort((a, b) => a.position.x - b.position.x);
+    for (let i = 1; i < row.length; i++) {
+      const prev = row[i - 1];
+      const curr = row[i];
+      const prevW = (prev.data['width'] as number) ?? 200;
+      const minX = prev.position.x + prevW + L.PAD;
+      if (curr.position.x < minX) {
+        curr.position = { ...curr.position, x: minX };
+        if (curr.size) curr.size = { ...curr.size };
+      }
     }
   }
 

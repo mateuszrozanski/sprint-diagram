@@ -1148,8 +1148,19 @@ export class AppComponent implements AfterViewInit {
         pbis    = result.pbis;
         users   = result.users;
         testers = result.testers;
-        this.dataStore.setUsers(users);
-        this.testers.set(testers);
+        // Jeśli ADO iteration fetch zawiódł w `fetchSprintItems`, result.testers
+        // może być pusty mimo że localStorage / poprzedni refresh miał Alicję+Damiana.
+        // Merge zamiast hard set — by lanes nie znikały.
+        if (testers.length === 0 && this.testers().length > 0) {
+          // skip override — keep previously-seeded testers
+        } else {
+          this.testers.set(testers);
+        }
+        if (users.length === 0 && this.dataStore.users().length > 0) {
+          // same dla devs
+        } else {
+          this.dataStore.setUsers(users);
+        }
         this.knownPbiIds = new Set(pbis.map(p => p.id));
         this.newBugsCount.set(0);
         this.logAudit(`Reloaded from ADO — ${pbis.length} work items`);

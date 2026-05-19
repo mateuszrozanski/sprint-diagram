@@ -252,6 +252,9 @@ export class AppComponent implements AfterViewInit {
         n.size = { width: n.data.width ?? 328, height: L.NODE_H };
       }
     }
+    // Cached state może zawierać overlapping pozycje (PBI nigdy nie mogą się
+    // nachodzić, szczególnie Tests). Sweep per row, push w prawo aż brak overlapu.
+    this.resolveOverlapsInPlace(restoredNodes);
     this.modelService.addNodes(restoredNodes);
     this.modelService.addEdges(restoredEdges);
     this.loadedNodeIds = restoredNodes.map((n: any) => n.id);
@@ -814,6 +817,37 @@ export class AppComponent implements AfterViewInit {
    * powinien zrobić to po, używając już zaktualizowanych signal-i. Inaczej
    * cache→env→cache race tworzy migotanie / brak label-i.
    */
+  /**
+   * Push w prawo overlap-ujące się PBI w obrębie row (każdy row = wiersz dev /
+   * QA sub-lane). Mutuje `nodes[].position.x` in-place. Cards przesuwane są
+   * sequentially L→R aż brak nakładania (PAD margines).
+   */
+  private resolveOverlapsInPlace(nodes: any[]): void {
+    type Row = { id: string; x: number; w: number; node: any };
+    const byRow = new Map<number, Row[]>();
+    for (const n of nodes) {
+      if (n.type !== 'pbi') continue;
+      const y = n.position?.y ?? 0;
+      const w = (n.data?.width as number) ?? (n.size?.width as number) ?? 200;
+      const x = n.position?.x ?? 0;
+      const key = Math.round(y / L.ROW_H);
+      if (!byRow.has(key)) byRow.set(key, []);
+      byRow.get(key)!.push({ id: n.id, x, w, node: n });
+    }
+    for (const row of byRow.values()) {
+      row.sort((a, b) => a.x - b.x);
+      for (let i = 1; i < row.length; i++) {
+        const prev = row[i - 1];
+        const curr = row[i];
+        const minX = prev.x + prev.w + L.PAD;
+        if (curr.x < minX) {
+          curr.x = minX;
+          curr.node.position = { ...curr.node.position, x: minX };
+        }
+      }
+    }
+  }
+
   private static readonly ITERATION_CACHE_KEY = 'sprint:iteration_seed:v1';
 
   /** Load last-known qaTesters/devs from localStorage. Used jako fallback gdy
@@ -1146,8 +1180,9 @@ export class AppComponent implements AfterViewInit {
       try {
         const result = await this.adoService.fetchSprintItems([]);
         pbis    = result.pbis;
-        users   = result.users;
-        testers = result.testers;
+        // Fallback do prev signal jeśli result puste (iteration fetch failed).
+        users   = result.users.length   ? result.users   : this.dataStore.users();
+        testers = result.testers.length ? result.testers : this.testers();
         // Jeśli ADO iteration fetch zawiódł w `fetchSprintItems`, result.testers
         // może być pusty mimo że localStorage / poprzedni refresh miał Alicję+Damiana.
         // Merge zamiast hard set — by lanes nie znikały.

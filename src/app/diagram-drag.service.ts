@@ -35,6 +35,52 @@ export class DiagramDragService {
   private nodeById(id: string) { return this.modelService.getNodeById(id) as DiagramNode | null; }
 
   /**
+   * Single-card drag drop INTO another card's bounds w tym samym wierszu →
+   * swap pozycji (PBI reorder bez konieczności dwóch dragów).
+   * Detekcja: center dragged karty mieści się w bounds static-a.
+   */
+  private tryDropSwap(
+    dragged: DragNode,
+    updates: NodeUpdate[],
+    allNodes: DiagramNode[],
+    draggedIds: ReadonlySet<string>,
+  ): void {
+    const draggedNode = this.nodeById(dragged.id);
+    if (!draggedNode) return;
+    const draggedUpdate = updates.find(u => u.id === dragged.id);
+    const dX = draggedUpdate?.position?.x ?? dragged.position.x;
+    const dY = draggedUpdate?.position?.y ?? dragged.position.y;
+    const dW = (draggedUpdate?.size?.width
+              ?? draggedUpdate?.data?.['width'] as number
+              ?? draggedNode.data['width'] as number) ?? 200;
+    const centerX = dX + dW / 2;
+    const rowKey = Math.round(dY / L.ROW_H);
+
+    let target: DiagramNode | null = null;
+    for (const n of allNodes) {
+      if (n.type !== 'pbi' || draggedIds.has(n.id)) continue;
+      const nRowKey = Math.round(n.position.y / L.ROW_H);
+      if (nRowKey !== rowKey) continue;
+      const w = (n.data['width'] as number) ?? 200;
+      if (centerX >= n.position.x && centerX <= n.position.x + w) {
+        target = n;
+        break;
+      }
+    }
+    if (!target) return;
+
+    // Swap: dragged ↔ target.
+    const origin = this.dragOrigins.get(dragged.id);
+    if (!origin) return;
+    if (draggedUpdate) {
+      draggedUpdate.position = { x: target.position.x, y: target.position.y };
+    } else {
+      updates.push({ id: dragged.id, position: { x: target.position.x, y: target.position.y } });
+    }
+    updates.push({ id: target.id, position: { x: origin.x, y: origin.y } });
+  }
+
+  /**
    * Anti-overlap dla dragged cards z TEMPORALNYM kierunkiem:
    * - Static card która ORYGINALNIE była PO dragged (origin.x większe) jest
    *   pushowana w prawo gdy dragged na nią nachodzi.
@@ -273,13 +319,19 @@ export class DiagramDragService {
     const allNodes = this.allNodes();
     const getById  = (id: string) => this.nodeById(id);
 
-    // Anti-overlap: dragged cards są pushowane W PRAWO past static cards w tym
-    // samym wierszu. Static cards (nie-draggedds) zostają na miejscu — user
-    // explicitly drag-uje jedną kartę i nie chce ruszać innych.
+    const primaryDragged = event.nodes.filter(n => n.type === 'pbi');
     const draggedIds = new Set<string>([
-      ...event.nodes.filter(n => n.type === 'pbi').map(n => n.id),
+      ...primaryDragged.map(n => n.id),
       ...this.cascadeIds,
     ]);
+
+    // Swap intent: pojedyncza dragged karta (no cascade), drop CENTER nad środkiem
+    // static karty w tym samym wierszu → swap pozycji zamiast push. Ułatwia reorder
+    // PBI na swimlane bez ręcznego dwukrotnego dragu.
+    if (primaryDragged.length === 1 && this.cascadeIds.size === 0) {
+      this.tryDropSwap(primaryDragged[0], updates, allNodes, draggedIds);
+    }
+
     this.pushDraggedOutOfStatic(updates, allNodes, draggedIds);
 
     syncQaNodes(updates, allNodes, getById);

@@ -16,6 +16,32 @@ import {
 import type { DiagramNode } from './sprint-data';
 import { setSprintCalendar, SPRINT_START, SPRINT_DAYS } from './sprint-data';
 
+const ITERATION_CACHE_KEY = 'sprint:iteration_seed:v1';
+
+function readCachedIterationSeed(): { qaTesters: string[]; devs: string[] } {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(ITERATION_CACHE_KEY) : null;
+    if (!raw) return { qaTesters: [], devs: [] };
+    const parsed = JSON.parse(raw);
+    return {
+      qaTesters: Array.isArray(parsed.qaTesters) ? parsed.qaTesters : [],
+      devs:      Array.isArray(parsed.devs)      ? parsed.devs      : [],
+    };
+  } catch { return { qaTesters: [], devs: [] }; }
+}
+
+function loadCachedTesterSeed(): { id: string; name: string }[] {
+  return readCachedIterationSeed().qaTesters
+    .map(s => s.trim()).filter(Boolean)
+    .map(name => ({ id: 'qa-' + slugifyUser(name), name }));
+}
+
+function loadCachedDevSeed(): { id: string; name: string }[] {
+  return readCachedIterationSeed().devs
+    .map(s => s.trim()).filter(Boolean)
+    .map(name => ({ id: slugifyUser(name), name }));
+}
+
 function countWorkingDays(start: Date, finish: Date): number {
   let count = 0;
   const d = new Date(start);
@@ -700,7 +726,15 @@ export class AppComponent implements AfterViewInit {
     ['qa',      DepEdgeComponent],
   ]);
 
-  readonly testers = signal<{ id: string; name: string }[]>([]);
+  // Initial testers/users seeded SYNCHRONICZNIE z localStorage — żeby pierwszy
+  // build lanes już miał Alicję/Damiana, bez okienka pustego boardu między
+  // initial render a refreshIterationData/loadFromAdo.
+  readonly testers = signal<{ id: string; name: string }[]>(loadCachedTesterSeed());
+
+  private readonly _seedDataStoreFromCache = (() => {
+    const cachedDevs = loadCachedDevSeed();
+    if (cachedDevs.length) this.dataStore.setUsers(cachedDevs);
+  })();
 
   readonly model = initializeModel({ nodes: this.buildLanes(), edges: [] });
 
@@ -817,6 +851,12 @@ export class AppComponent implements AfterViewInit {
    * powinien zrobić to po, używając już zaktualizowanych signal-i. Inaczej
    * cache→env→cache race tworzy migotanie / brak label-i.
    */
+  private saveCachedIterationSeed(qaTesters: string[], devs: string[]): void {
+    try {
+      localStorage.setItem(ITERATION_CACHE_KEY, JSON.stringify({ qaTesters, devs }));
+    } catch {}
+  }
+
   /**
    * Push w prawo overlap-ujące się PBI w obrębie row (każdy row = wiersz dev /
    * QA sub-lane). Mutuje `nodes[].position.x` in-place. Cards przesuwane są
@@ -848,28 +888,6 @@ export class AppComponent implements AfterViewInit {
     }
   }
 
-  private static readonly ITERATION_CACHE_KEY = 'sprint:iteration_seed:v1';
-
-  /** Load last-known qaTesters/devs from localStorage. Used jako fallback gdy
-   *  ADO iteration fetch zawiedzie (cold start, network glitch). */
-  private loadCachedIterationSeed(): { qaTesters: string[]; devs: string[] } {
-    try {
-      const raw = localStorage.getItem(AppComponent.ITERATION_CACHE_KEY);
-      if (!raw) return { qaTesters: [], devs: [] };
-      const parsed = JSON.parse(raw);
-      return {
-        qaTesters: Array.isArray(parsed.qaTesters) ? parsed.qaTesters : [],
-        devs:      Array.isArray(parsed.devs)      ? parsed.devs      : [],
-      };
-    } catch { return { qaTesters: [], devs: [] }; }
-  }
-
-  private saveCachedIterationSeed(qaTesters: string[], devs: string[]): void {
-    try {
-      localStorage.setItem(AppComponent.ITERATION_CACHE_KEY, JSON.stringify({ qaTesters, devs }));
-    } catch {}
-  }
-
   private applyIterationSeed(qaTesterNames: string[], devNames: string[]): void {
     const cleanedTesters = qaTesterNames.map(s => s.trim()).filter(Boolean);
     const seededTesters = cleanedTesters.map(name => ({ id: 'qa-' + slugifyUser(name), name }));
@@ -890,9 +908,10 @@ export class AppComponent implements AfterViewInit {
   }
 
   private async refreshIterationData(): Promise<void> {
-    // 1) Najpierw cache localStorage z poprzedniej sesji — żeby labels pojawiły
-    //    się NATYCHMIAST nawet jeśli ADO iteration fetch jest cold/wolny/zawiedzie.
-    const cached = this.loadCachedIterationSeed();
+    // 1) Cache z poprzedniej sesji już został wstrzyknięty w field initializer
+    //    (loadCachedTesterSeed + _seedDataStoreFromCache), ale na wypadek hot
+    //    reloadu wykonujemy też tu.
+    const cached = readCachedIterationSeed();
     if (cached.qaTesters.length || cached.devs.length) {
       this.applyIterationSeed(cached.qaTesters, cached.devs);
     }

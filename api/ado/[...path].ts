@@ -94,7 +94,7 @@ function buildSprintWiql(): { query: string } {
       `SELECT [System.Id] FROM WorkItems ` +
       `WHERE [System.TeamProject] = '${ADO_PROJECT.replace(/'/g, "''")}' ` +
       `AND [System.WorkItemType] IN ('User Story','Product Backlog Item','Bug') ` +
-      `AND [System.State] <> 'Closed' ` +
+      `AND [System.State] NOT IN ('Closed','Done','Resolved','Removed') ` +
       `AND ${iterClause}` +
       areaClause,
   };

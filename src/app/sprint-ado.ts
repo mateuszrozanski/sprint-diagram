@@ -157,13 +157,12 @@ export function buildNodesFromAdo(
       const phaseId = `${pbi.id}-p${i}`;
       const isParallel = !!phase.parallel;
 
-      // Intra-PBI handoff: faza zależy tylko od faz O INNEJ activity w tym PBI.
-      // Czyli Testing czeka na WSZYSTKIE Development tego PBI; ale Development 2
-      // (inny dev, ta sama activity) NIE czeka na Development 1 — devs robią
-      // swoje porcje równolegle, bez sztucznych dziur w wierszach.
-      // Cross-PBI deps pomijamy całkowicie (wizualne tylko).
+      // Intra-PBI handoff: TYLKO faza Testing czeka na inne aktywności tego PBI.
+      // Devs (Development/Design/Backend/Frontend itd.) NIGDY na nic nie czekają —
+      // pakowani ciasno w swoich wierszach. Cross-PBI deps wyłącznie wizualne.
       const deps = new Set<string>();
-      if (!isParallel) {
+      const isTesterPhase = phase.assigneeId.startsWith('qa-');
+      if (!isParallel && isTesterPhase) {
         for (let j = 0; j < i; j++) {
           if (pbi.phases[j].role !== phase.role) {
             deps.add(`${pbi.id}-p${j}`);

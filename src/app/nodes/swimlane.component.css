@@ -88,6 +88,11 @@
 .qa-label .lane-name       { color: #13a10e; }
 .incoming-label .lane-name { color: #d4860a; }
 .qa-icon   { font-size: 16px; }
+.trophy-icon {
+  font-size: 14px; margin-left: 4px; cursor: help;
+  filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.55));
+  pointer-events: auto;
+}
 
 /* ── Lane body ── */
 .lane-body { flex: 1; position: relative; overflow: visible; }

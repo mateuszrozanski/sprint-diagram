@@ -170,6 +170,10 @@
                 (click)="toggleAssigneeFilter(t.id)">
           <span class="filter-avatar">{{ initialsOf(t.name) }}</span>
           QA · {{ t.name }}
+          @if (t.name.toLowerCase().includes('alicja')) {
+            <span class="trophy-chip-icon"
+                  title="Won the latest hackathon in the Best Business Value category">🏆</span>
+          }
         </button>
       }
       <span class="filter-divider"></span>

@@ -264,6 +264,7 @@ ng-diagram    { width: 100%; height: 100%; }
 .filter-chip.qa:hover { background: #2a3d2a; }
 .filter-chip.qa.active { background: #13a10e; border-color: #13a10e; color: #fff; }
 .filter-chip.qa .filter-avatar { background: #13a10e; }
+.trophy-chip-icon { font-size: 12px; line-height: 1; margin-left: 2px; cursor: help; }
 .filter-avatar {
   display: inline-flex; width: 18px; height: 18px; border-radius: 50%;
   background: #555; color: #fff; font-size: 9px; font-weight: 700;

@@ -48,6 +48,10 @@
       @if (isQA())       { <span class="qa-icon">🧪</span> }
       @if (isIncoming()) { <span class="qa-icon">📥</span> }
       <span class="lane-name">{{ node().data['label'] }}</span>
+      @if (showTrophy()) {
+        <span class="trophy-icon"
+              title="Won the latest hackathon in the Best Business Value category">🏆</span>
+      }
     </div>
 
     <!-- Lane body -->

@@ -30,6 +30,12 @@ export class SwimlaneComponent implements NgDiagramNodeTemplate {
   protected readonly isHeader   = computed(() => !!this.node().data['isHeader']);
   protected readonly isIncoming = computed(() => !!this.node().data['isIncoming']);
 
+  /** Trophy dla Alicji — wygrała ostatni hackaton w kat. Best Business Value. */
+  protected readonly showTrophy = computed(() => {
+    const label = String(this.node().data['label'] ?? '').toLowerCase();
+    return label.includes('alicja');
+  });
+
   protected readonly dateRange = (() => {
     const end = new Date(SPRINT_START);
     end.setDate(end.getDate() + 11);

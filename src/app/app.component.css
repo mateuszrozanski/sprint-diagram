@@ -260,6 +260,10 @@ ng-diagram    { width: 100%; height: 100%; }
   background: #0078d4; border-color: #0078d4; color: #fff;
 }
 .filter-chip.danger.active { background: #ef4444; border-color: #ef4444; }
+.filter-chip.qa { border-color: #2a4d2a; background: #1f2a1f; }
+.filter-chip.qa:hover { background: #2a3d2a; }
+.filter-chip.qa.active { background: #13a10e; border-color: #13a10e; color: #fff; }
+.filter-chip.qa .filter-avatar { background: #13a10e; }
 .filter-avatar {
   display: inline-flex; width: 18px; height: 18px; border-radius: 50%;
   background: #555; color: #fff; font-size: 9px; font-weight: 700;

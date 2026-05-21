@@ -2,7 +2,7 @@
      [class.qa-lane]="isQA()"
      [class.incoming-lane]="isIncoming()"
      [class.header-lane]="isHeader()"
-     [style.height.px]="isHeader() ? headerH : rowH"
+     [style.height.px]="isHeader() ? headerH : rowH()"
      [style.width.px]="totalW">
 
   @if (isHeader()) {
@@ -11,6 +11,12 @@
       <span class="corner-sprint">{{ node().data['sprintName'] || 'Sprint' }}</span>
       <span class="corner-dates">{{ dateRange }}</span>
     </div>
+
+    @if (todayX !== null) {
+      <div class="today-line header-today" [style.left.px]="labelW + todayX">
+        <span class="today-badge">TODAY</span>
+      </div>
+    }
 
     <!-- Calendar columns -->
     @for (slot of slots; track slot.date.getTime(); let i = $index) {
@@ -44,7 +50,7 @@
          [class.incoming-label]="isIncoming()"
          [style.width.px]="labelW"
          [style.min-width.px]="labelW"
-         [style.height.px]="rowH">
+         [style.height.px]="rowH()">
       @if (isQA())       { <span class="qa-icon">🧪</span> }
       @if (isIncoming()) { <span class="qa-icon">📥</span> }
       <span class="lane-name">{{ node().data['label'] }}</span>
@@ -55,7 +61,7 @@
     </div>
 
     <!-- Lane body -->
-    <div class="lane-body" [style.height.px]="rowH">
+    <div class="lane-body" [style.height.px]="rowH()">
 
       <!-- Non-working day bands: one per weekend/holiday column -->
       @for (zone of nonWorkingZones; track zone.left) {
@@ -67,6 +73,10 @@
 
       <!-- Week 2 separator -->
       <div class="w2-sep" [style.left.px]="w2SepX"></div>
+
+      @if (todayX !== null) {
+        <div class="today-line" [style.left.px]="todayX"></div>
+      }
 
     </div>
   }

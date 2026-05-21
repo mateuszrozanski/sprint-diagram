@@ -1,6 +1,6 @@
-import { ADO_MOCK_PBIS, CALENDAR_SLOTS, INCOMING_BUGS_MOCK, USERS, type AdoPbi, type PBI } from './sprint-data';
+import { ADO_MOCK_PBIS, CALENDAR_SLOTS, INCOMING_BUGS_MOCK, USERS, type AdoPbi, type PBI, categorizeState } from './sprint-data';
 import type { DiagramNode, DiagramEdge } from './sprint-data';
-import { L, getSprintDayOffset, getSlotXOffset, getSlotWidth, getQaWidth, getEffectiveQaWidth, getEffectivePbiWidth, nearestWorkingSprintDay, skipNonWorkingX } from './layout';
+import { L, getSprintDayOffset, getSlotXOffset, getSlotWidth, getQaWidth, getEffectiveQaWidth, getEffectivePbiWidth, nearestWorkingSprintDay, skipNonWorkingX, getTodayXOffset } from './layout';
 import { widthForHours } from './card-width';
 
 // ── Holiday-aware day helpers ────────────────────────────────────────────────
@@ -97,6 +97,12 @@ export function buildNodesFromAdo(
   edges: DiagramEdge[];
   assigneeMap: Map<string, string>;
   depsMap: Map<string, string[]>;
+  /** Ile lanes ma każdy dev po scheduling. Dev z 1 lane = standardowa wysokość. */
+  lanesPerDev: Map<string, number>;
+  /** Top Y (px) dev/tester row. Liczone cumulatywnie po `users` order, potem testers. */
+  rowYMap: Map<string, number>;
+  /** Wysokość (px) dev/tester row = BASE_H × lanes. */
+  rowHMap: Map<string, number>;
 } {
   const testerIndex = new Map(testers.map((t, i) => [t.id, i]));
   const assigneeMap = new Map<string, string>();
@@ -107,9 +113,17 @@ export function buildNodesFromAdo(
   // Day 1 sprintu = planowanie + retro, devs nie pracują. Phases startują od day 2:
   // FIRST_X = LABEL_W + DAY_W.
   const FIRST_X = L.LABEL_W + L.DAY_W;
-  const devCursorPx  = new Map<string, number>(users.map(u => [u.id, FIRST_X]));
+  // Multi-lane per dev: każdy dev ma N lanes, każda z własnym cursor X. First-fit
+  // alokacja — phase ląduje w pierwszej lane gdzie cursor <= jej start. Jeśli żadna
+  // → spawn nowej lane (push 0). lanes[0] istnieje dla każdego deva od początku
+  // żeby standardowe sekwencyjne pakowanie się nie zmieniło gdy nie ma parallel.
+  const laneCursorsPerDev = new Map<string, number[]>(users.map(u => [u.id, [FIRST_X]]));
   const pbiLastEndPx = new Map<string, number>();
   const phaseEndPx   = new Map<string, number>();
+  // "Dziś" jako absolutny px (LABEL_W + offset) — phases State=inDev/blocked
+  // startują od max(todayX, depEnd, lane.cursor). null = sprint poza dziś.
+  const todayOffset = getTodayXOffset();
+  const todayX = todayOffset !== null ? L.LABEL_W + todayOffset : null;
 
   interface PhaseLayout {
     id: string;
@@ -128,6 +142,7 @@ export function buildNodesFromAdo(
     isParallel: boolean;
     x: number;
     width: number;
+    laneIdx: number;
   }
 
   const allPhases: PhaseLayout[] = [];
@@ -146,6 +161,10 @@ export function buildNodesFromAdo(
     title: string;
     parentTitle?: string;
     deps: Set<string>;
+    /** Kategoria stanu (z phase.state lub PBI.state) — driveruje schedule:
+     *  inDev/blocked → karta przyklejona do todayX (już się dzieje).
+     *  Reszta → standardowy pack od cursor. */
+    stateCat: ReturnType<typeof categorizeState>;
   }
 
   const stubs: PhaseStub[] = [];
@@ -157,13 +176,18 @@ export function buildNodesFromAdo(
       const phaseId = `${pbi.id}-p${i}`;
       const isParallel = !!phase.parallel;
 
-      // Intra-PBI handoff: TYLKO faza Testing czeka na inne aktywności tego PBI.
-      // Devs (Development/Design/Backend/Frontend itd.) NIGDY na nic nie czekają —
-      // pakowani ciasno w swoich wierszach. Cross-PBI deps wyłącznie wizualne.
+      // Intra-PBI handoff: faza Testing czeka na inne aktywności tego PBI.
+      // Wykrywamy po roli (typ taska w ADO: Microsoft.VSTS.Common.Activity),
+      // nie po assignee — Testing task może być przypisany do dev-a (nie tylko
+      // QA), a wtedy assigneeId nie zaczyna się od `qa-` i bez tego Testing
+      // szedłby równolegle / przed Development.
+      // Skanujemy WSZYSTKIE phases (nie tylko j<i), bo ADO child task order
+      // bywa losowy — Testing może wrócić przed Development → idx=0, deps=[].
       const deps = new Set<string>();
-      const isTesterPhase = phase.assigneeId.startsWith('qa-');
-      if (!isParallel && isTesterPhase) {
-        for (let j = 0; j < i; j++) {
+      const isTestingRole = phase.role === 'Testing';
+      if (!isParallel && isTestingRole) {
+        for (let j = 0; j < pbi.phases.length; j++) {
+          if (j === i) continue;
           if (pbi.phases[j].role !== phase.role) {
             deps.add(`${pbi.id}-p${j}`);
           }
@@ -186,25 +210,56 @@ export function buildNodesFromAdo(
         title: phase.title ?? pbi.title,
         parentTitle: phase.title ? pbi.title : undefined,
         deps,
+        stateCat: categorizeState(phase.state ?? pbi.state),
       };
       stubs.push(stub);
       stubById.set(phaseId, stub);
     }
   }
 
-  // ── 2) List scheduling: zawsze pickuj phase ready (deps zaplanowane) ────
-  // z najwcześniejszym możliwym startem. Wypełnia dziury w dev-cursors zamiast
-  // sztywnego trzymania PBI-by-PBI loopa (który zostawiał Aleksandrowi 5-day
-  // gap po cross-PBI zależności od kogoś innego).
+  // ── 2) List scheduling z lane allocation ────────────────────────────────
+  // Round picks phase ready (deps scheduled) z najwcześniejszym możliwym startem,
+  // szuka first-fit lane u jej deva. Jeśli żadna istniejąca lane nie pasuje (lane
+  // cursor > start) → spawn nowej lane. Tym samym phases State=inDev tego samego
+  // deva (wszystkie startują od todayX) lądują w równoległych lanes.
   const scheduledX = new Map<string, number>();
   const scheduledEndX = new Map<string, number>();
+  const scheduledLaneIdx = new Map<string, number>();
   const pending = new Set<string>(stubs.map(s => s.id));
+
+  /** Minimalny start phase: max(deps, FIRST_X, todayX gdy in-progress). */
+  function minStartFor(stub: PhaseStub, depEnd: number): number {
+    let start = Math.max(depEnd, FIRST_X);
+    if (todayX !== null && (stub.stateCat === 'inDev' || stub.stateCat === 'blocked')) {
+      // Phase already in progress → kotwica do "dziś". Nie wcześniej (już się dzieje),
+      // nie później (deps i tak są pewnie spełnione bo już pracuje).
+      start = Math.max(start, todayX);
+    }
+    return start;
+  }
+
+  /** First-fit lane: zwraca {laneIdx, x} gdzie phase ląduje, advanceuje cursor. */
+  function placeInLane(stub: PhaseStub, start: number, width: number): { laneIdx: number; placedX: number; endX: number } {
+    const lanes = laneCursorsPerDev.get(stub.assigneeId) ?? [FIRST_X];
+    if (!laneCursorsPerDev.has(stub.assigneeId)) {
+      laneCursorsPerDev.set(stub.assigneeId, lanes);
+    }
+    // First-fit: pierwsza lane gdzie cursor <= start (czyli phase się mieści bez kolizji).
+    let laneIdx = lanes.findIndex(c => c <= start);
+    if (laneIdx === -1) {
+      laneIdx = lanes.length;
+      lanes.push(FIRST_X);
+    }
+    const { placedX } = placePhase(Math.max(lanes[laneIdx], start), width);
+    const effW = getEffectivePbiWidth(placedX, width);
+    const endX = placedX + effW;
+    lanes[laneIdx] = endX;
+    return { laneIdx, placedX, endX };
+  }
 
   while (pending.size > 0) {
     // Intra-PBI handoff JEST respektowany: Testing dla PBI X nie może startować
     // przed końcem Development X. Cross-PBI deps NIE blokują (wizualne tylko).
-    // Tester czeka, ale w międzyczasie może wziąć Testing innego PBI — list
-    // scheduling przepicka tę fazę, której deps są ready i start najmniejszy.
     const ready: { stub: PhaseStub; start: number }[] = [];
     for (const id of pending) {
       const stub = stubById.get(id)!;
@@ -215,23 +270,20 @@ export function buildNodesFromAdo(
         depEnd = Math.max(depEnd, scheduledEndX.get(dId)!);
       }
       if (!depsReady) continue;
-      const devStart = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
-      const start = Math.max(devStart, depEnd, FIRST_X);
-      ready.push({ stub, start });
+      ready.push({ stub, start: minStartFor(stub, depEnd) });
     }
 
     if (!ready.length) {
-      // Dep cycle / orphan — bezpieczny fallback: schedule remaining w cursorze.
+      // Dep cycle / orphan — bezpieczny fallback: schedule remaining w lane 0.
       console.warn('[layout] dep cycle, scheduling remaining flatly');
       for (const id of pending) {
         const stub = stubById.get(id)!;
-        const dev = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
+        const start = minStartFor(stub, 0);
         const w = widthForHours(stub.hours);
-        const { placedX } = placePhase(dev, w);
-        const effW = getEffectivePbiWidth(placedX, w);
+        const { laneIdx, placedX, endX } = placeInLane(stub, start, w);
         scheduledX.set(id, placedX);
-        scheduledEndX.set(id, placedX + effW);
-        devCursorPx.set(stub.assigneeId, placedX + effW);
+        scheduledEndX.set(id, endX);
+        scheduledLaneIdx.set(id, laneIdx);
       }
       break;
     }
@@ -251,15 +303,45 @@ export function buildNodesFromAdo(
 
     const winner = ready[0];
     const w = widthForHours(winner.stub.hours);
-    const { placedX } = placePhase(winner.start, w);
-    // VISUAL width = baseW + weekend slots inside span. devCursor MUSI advanceować
-    // o effW, inaczej następna faza wyląduje "w środku" weekendu poprzedniej karty
-    // i nakłada się na nią po pobraniu.
-    const effW = getEffectivePbiWidth(placedX, w);
+    const { laneIdx, placedX, endX } = placeInLane(winner.stub, winner.start, w);
     scheduledX.set(winner.stub.id, placedX);
-    scheduledEndX.set(winner.stub.id, placedX + effW);
-    devCursorPx.set(winner.stub.assigneeId, placedX + effW);
+    scheduledEndX.set(winner.stub.id, endX);
+    scheduledLaneIdx.set(winner.stub.id, laneIdx);
     pending.delete(winner.stub.id);
+  }
+
+  // ── 2.5) Lanes per dev/tester + cumulative row Y ────────────────────────
+  // BASE_H = "atomowa" wysokość 1 lane (= dawne L.ROW_H). Dev z 1 lane → BASE_H.
+  // Dev z 3 lanes → BASE_H × 3 = trzy karty obok siebie w pionie w tym samym
+  // wierszu deva. Incoming nadal jako pojedynczy row na samej górze.
+  const BASE_H = L.ROW_H;
+  const lanesPerDev = new Map<string, number>();
+  for (const u of users) {
+    const lanes = laneCursorsPerDev.get(u.id);
+    lanesPerDev.set(u.id, Math.max(1, lanes?.length ?? 1));
+  }
+  // Testerzy też mogą mieć multi-lane (QA tester pracuje nad 2 PBI naraz w testing
+  // phase). Lane cursors są w `laneCursorsPerDev` z assigneeId `qa-<slug>`.
+  for (const t of testers) {
+    const lanes = laneCursorsPerDev.get(t.id);
+    lanesPerDev.set(t.id, Math.max(1, lanes?.length ?? 1));
+  }
+
+  // Row Y/H: incoming (BASE_H) na górze, potem devs cumulatywnie, potem testers.
+  const rowYMap = new Map<string, number>();
+  const rowHMap = new Map<string, number>();
+  let cumY = L.HEADER_H + BASE_H; // skip incoming row (BASE_H high)
+  for (const u of users) {
+    const h = BASE_H * lanesPerDev.get(u.id)!;
+    rowYMap.set(u.id, cumY);
+    rowHMap.set(u.id, h);
+    cumY += h;
+  }
+  for (const t of testers) {
+    const h = BASE_H * lanesPerDev.get(t.id)!;
+    rowYMap.set(t.id, cumY);
+    rowHMap.set(t.id, h);
+    cumY += h;
   }
 
   // ── 3) Materializuj PhaseLayout z policzonymi x/width ───────────────────
@@ -289,6 +371,7 @@ export function buildNodesFromAdo(
       isParallel:  stub.isParallel,
       x,
       width:       w,
+      laneIdx:     scheduledLaneIdx.get(stub.id) ?? 0,
     });
 
     const prevPbiEnd = pbiLastEndPx.get(stub.pbi.id) ?? 0;
@@ -309,9 +392,14 @@ export function buildNodesFromAdo(
       console.warn(`[buildNodesFromAdo] unknown assignee ${pl.assigneeId} for phase ${pl.id}, skipping`);
       continue;
     }
-    const rowIdxForY = isQaPhase
-      ? users.length + 1 + (testerSubIdx as number)
-      : (userIdx + 1);
+    // Top Y dev/tester row z policzonej mapy + laneIdx × BASE_H żeby parallel
+    // phases tego samego deva lądowały w pionie pod sobą (zamiast push X).
+    const rowTopY = rowYMap.get(pl.assigneeId);
+    if (rowTopY === undefined) {
+      console.warn(`[buildNodesFromAdo] no rowYMap entry for ${pl.assigneeId}, skipping`);
+      continue;
+    }
+    const laneY = rowTopY + pl.laneIdx * BASE_H;
 
     const pbiObj: PBI = {
       id:              pl.id,
@@ -328,6 +416,9 @@ export function buildNodesFromAdo(
     const parentPbi = items.find(p => p.id === pl.parentId);
     const phaseHours = parentPbi?.phases[pl.phaseIdx]?.hours;
     const groupTaskTitles = parentPbi?.phases[pl.phaseIdx]?.groupTaskTitles ?? [];
+    // Phase-level state ma pierwszeństwo nad PBI-level — task może być Blocked
+    // nawet jeśli PBI jest In Development, i chcemy widzieć blokadę na karcie.
+    const phaseState = parentPbi?.phases[pl.phaseIdx]?.state ?? parentPbi?.state;
 
     nodes.push({
       id:       pl.id,
@@ -335,7 +426,7 @@ export function buildNodesFromAdo(
       zOrder:   10,
       position: {
         x: pl.x,
-        y: L.HEADER_H + rowIdxForY * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),
+        y: laneY + Math.round((BASE_H - L.NODE_H) / 2),
       },
       autoSize: false,
       size:     { width: pl.width, height: L.NODE_H },
@@ -351,7 +442,7 @@ export function buildNodesFromAdo(
         isBugType:       pl.parentType === 'Bug',
         phaseIdx:        pl.phaseIdx,
         totalPhases:     pl.totalPhases,
-        state:           parentPbi?.state,
+        state:           phaseState,
       },
     });
 
@@ -402,10 +493,11 @@ export function buildNodesFromAdo(
     // Najbardziej-w-prawo faza (px-based) — QA card siada tuż za nią.
     const rightmost = phases.reduce((best, p) => (p.x + p.width) > (best.x + best.width) ? p : best);
     const pbi = items.find(p => p.id === pbiId);
-    const testerSubRow = pbi?.qaTesterId
-      ? (testerIndex.get(pbi.qaTesterId) ?? 0)
-      : 0;
-    const qaRowIndex = users.length + 1 + testerSubRow;
+    // QA card lądunje w row testera (z rowYMap). Bez testera → fallback do row
+    // pierwszego z `testers` lub tuż za ostatnim devem.
+    const testerId = pbi?.qaTesterId ?? testers[0]?.id;
+    const qaRowTopY = testerId !== undefined ? rowYMap.get(testerId) : undefined;
+    const qaRowTop = qaRowTopY ?? cumY; // cumY = po wszystkich devach/testerach
     let qaX = skipNonWorkingX(rightmost.x + rightmost.width + L.PAD);
     // Clamp do sprint right edge — jak dev phases przekraczają sprint, QA i tak
     // zostaje w ramach widoku. (Kilka QA cards może się przy granicy zachodzić —
@@ -417,7 +509,7 @@ export function buildNodesFromAdo(
       zOrder:   10,
       position: {
         x: qaX,
-        y: L.HEADER_H + qaRowIndex * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2),
+        y: qaRowTop + Math.round((BASE_H - L.NODE_H) / 2),
       },
       autoSize: false,
       size:     { width: Math.max(getQaWidth(), 120), height: L.NODE_H },
@@ -473,17 +565,18 @@ export function buildNodesFromAdo(
     }
   }
 
-  // Defensywny anti-overlap sweep — KAŻDA karta (PBI + QA-task anchor) w tym
-  // samym wierszu pushowana w prawo aż brak nakładania. effW uwzględnia weekend
-  // extension. NACZELNA REGUŁA: żadna karta nie nakłada się na inną.
-  const cardsByRow = new Map<number, DiagramNode[]>();
+  // Defensywny anti-overlap sweep — KAŻDA karta (PBI + QA-task anchor) w tej
+  // samej **lane** (a nie tylko w dev-row) pushowana w prawo aż brak nakładania.
+  // Klucz = position.y zaokrąglony do BASE_H, bo każda lane ma deterministyczny
+  // top Y = rowTopY + laneIdx × BASE_H.
+  const cardsByLane = new Map<number, DiagramNode[]>();
   for (const n of nodes) {
     if (n.type !== 'pbi' && n.type !== 'qa-task') continue;
-    const key = Math.round(n.position.y / L.ROW_H);
-    if (!cardsByRow.has(key)) cardsByRow.set(key, []);
-    cardsByRow.get(key)!.push(n);
+    const key = Math.round(n.position.y / BASE_H);
+    if (!cardsByLane.has(key)) cardsByLane.set(key, []);
+    cardsByLane.get(key)!.push(n);
   }
-  for (const row of cardsByRow.values()) {
+  for (const row of cardsByLane.values()) {
     row.sort((a, b) => a.position.x - b.position.x);
     for (let i = 1; i < row.length; i++) {
       const prev = row[i - 1];
@@ -497,7 +590,7 @@ export function buildNodesFromAdo(
     }
   }
 
-  return { nodes, edges, assigneeMap, depsMap };
+  return { nodes, edges, assigneeMap, depsMap, lanesPerDev, rowYMap, rowHMap };
 }
 
 // ── Incoming bugs ───────────────────────────────────────────────────────────

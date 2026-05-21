@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import type { AdoPbi, SprintUser } from './sprint-data';
+import { categorizeState } from './sprint-data';
 
 export interface AdoIteration {
   name:       string;
@@ -65,6 +66,38 @@ function activityFromTask(task: any): string {
   const tagRole = roleFromTags(task.fields?.['System.Tags'] ?? '');
   if (tagRole !== 'Dev') return tagRole;
   return 'Development';
+}
+
+/**
+ * Agregacja state'ów tasków w jednej grupie (activity+assignee) do jednego state
+ * dla karty. Priorytet: blocked > inDev > review > qaTest > qaOwner > qaDeploy >
+ * stage > new > done > unknown. Najbardziej "uwago-warty" wygrywa, żeby PM widział
+ * problem od razu nawet jeśli tylko jeden z N podtasków jest zablokowany.
+ */
+function aggregateGroupState(states: string[]): string | undefined {
+  if (!states.length) return undefined;
+  const PRIORITY: Record<string, number> = {
+    blocked:  100,
+    inDev:     90,
+    review:    80,
+    qaTest:    70,
+    qaOwner:   65,
+    qaDeploy:  60,
+    stage:     50,
+    new:       40,
+    done:      10,
+    unknown:    0,
+  };
+  let best = states[0];
+  let bestScore = PRIORITY[categorizeState(best)] ?? 0;
+  for (let i = 1; i < states.length; i++) {
+    const score = PRIORITY[categorizeState(states[i])] ?? 0;
+    if (score > bestScore) {
+      best = states[i];
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 export function slugifyUser(displayName: string): string {
@@ -229,7 +262,7 @@ export class AdoService {
       // grupujemy taski o tej samej aktywności (Development/Testing/Design)
       // i tym samym dev-ie w JEDNĄ kartę. Hours = suma. Jeśli dwóch devów
       // robi Development tego samego PBI → dwie karty "Development".
-      type Group = { activity: string; assigneeId: string; hours: number; titles: string[] };
+      type Group = { activity: string; assigneeId: string; hours: number; titles: string[]; states: string[] };
       const groupMap = new Map<string, Group>();
       for (const t of devTasks) {
         const activity   = activityFromTask(t);
@@ -238,11 +271,13 @@ export class AdoService {
         const key        = `${activity}|${assigneeId}`;
         const existing   = groupMap.get(key);
         const title      = t.fields['System.Title'] as string;
+        const state      = t.fields['System.State'] as string | undefined;
         if (existing) {
           existing.hours += hours;
           existing.titles.push(title);
+          if (state) existing.states.push(state);
         } else {
-          groupMap.set(key, { activity, assigneeId, hours, titles: [title] });
+          groupMap.set(key, { activity, assigneeId, hours, titles: [title], states: state ? [state] : [] });
         }
       }
 
@@ -277,6 +312,7 @@ export class AdoService {
                             ? `${g.label} (${g.titles.length} tasks)`
                             : g.label,
         groupTaskTitles:  g.titles,
+        state:            aggregateGroupState(g.states),
       }));
 
       const tester = resolveTester(fields['Custom.QATester']?.displayName);

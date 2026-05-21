@@ -14,12 +14,6 @@ export class SprintService {
   readonly isBugsLoaded  = signal(false);
   readonly undoLabel     = signal<string | null>(null);
 
-  // Layout state z ostatniego builda. Swimlane factory i drag service muszą wiedzieć
-  // ile lanes ma każdy dev/tester żeby renderować zmienne wysokości row.
-  readonly lanesPerDev = signal<Map<string, number>>(new Map());
-  readonly rowYMap     = signal<Map<string, number>>(new Map());
-  readonly rowHMap     = signal<Map<string, number>>(new Map());
-
   private undoSnapshot: UndoSnapshot | null = null;
 
   applyMaps(assigneeMap: Map<string, string>, depsMap: Map<string, string[]>): void {

@@ -1243,6 +1243,7 @@ export class AppComponent implements AfterViewInit {
           });
         }
 
+        this.rebuildLanes();
       } catch (err) {
         console.error('[AdoService] fetch failed, falling back to mock data', err);
       }
@@ -1250,14 +1251,8 @@ export class AppComponent implements AfterViewInit {
       await new Promise<void>(r => setTimeout(r, 1200));
     }
 
-    const { nodes, edges, assigneeMap, depsMap, lanesPerDev, rowYMap, rowHMap } = buildNodesFromAdo(pbis, users, testers);
+    const { nodes, edges, assigneeMap, depsMap } = buildNodesFromAdo(pbis, users, testers);
     this.sprint.applyMaps(assigneeMap, depsMap);
-    // Layout state musi być zapisany PRZED rebuildLanes, bo swimlane factory
-    // czyta zmienne wysokości z signal.
-    this.sprint.lanesPerDev.set(lanesPerDev);
-    this.sprint.rowYMap.set(rowYMap);
-    this.sprint.rowHMap.set(rowHMap);
-    this.rebuildLanes();
 
     // Sprzątamy poprzednio dodane PBI/QA/edges przed wrzuceniem nowych.
     // Bez tego drugi+ call do loadFromAdo robił stack duplikatów na tych samych ID-kach.
@@ -1366,40 +1361,26 @@ export class AppComponent implements AfterViewInit {
   private buildLanes(): DiagramNode[] {
     const totalW = getTotalWidth();
     const users  = this.dataStore.users();
-    const rowY   = this.sprint.rowYMap();
-    const rowH   = this.sprint.rowHMap();
 
-    const lane = (id: string, y: number, height: number, data: Record<string, unknown>): DiagramNode => ({
-      id, type: 'swimlane', zOrder: 0, position: { x: 0, y }, data: { ...data, height }, draggable: false,
+    const lane = (id: string, y: number, data: Record<string, unknown>): DiagramNode => ({
+      id, type: 'swimlane', zOrder: 0, position: { x: 0, y }, data, draggable: false,
     });
 
     const testers = this.testers();
-    // Każda dev/tester lane ma swój rozmiar zależny od liczby równoległych pasów.
-    // Brak entry w rowY/rowH (pierwszy render, przed buildNodesFromAdo) → fallback
-    // do uniformowego L.ROW_H żeby UI się nie zawalił.
-    const devLaneY = (uid: string, fallback: number) => rowY.get(uid) ?? fallback;
-    const devLaneH = (uid: string) => rowH.get(uid) ?? L.ROW_H;
-
+    // Jeśli mamy testerów z ADO → po jednej sub-lane per tester. Inaczej fallback do jednej generycznej QA.
     const qaLanes: DiagramNode[] = testers.length
-      ? testers.map((t, i) => {
-          const fallback = L.HEADER_H + (users.length + 1 + i) * L.ROW_H;
-          return lane(`lane-${t.id}`, devLaneY(t.id, fallback), devLaneH(t.id),
-            { label: `QA · ${t.name}`, width: totalW, isQA: true });
-        })
-      : [(() => {
-          const fallback = L.HEADER_H + (users.length + 1) * L.ROW_H;
-          return lane('lane-qa', fallback, L.ROW_H,
-            { label: 'QA / Testing', width: totalW, isQA: true });
-        })()];
+      ? testers.map((t, i) =>
+          lane(`lane-${t.id}`, L.HEADER_H + (users.length + 1 + i) * L.ROW_H,
+            { label: `QA · ${t.name}`, width: totalW, height: L.ROW_H, isQA: true }))
+      : [lane('lane-qa', L.HEADER_H + (users.length + 1) * L.ROW_H,
+          { label: 'QA / Testing', width: totalW, height: L.ROW_H, isQA: true })];
 
     return [
-      lane('hdr',           0,           L.HEADER_H, { isHeader: true,  width: totalW, sprintName: this.currentSprint()?.name ?? 'Sprint' }),
-      lane('lane-incoming', L.HEADER_H,  L.ROW_H,    { label: 'Incoming', width: totalW, isIncoming: true }),
-      ...users.map((user, i) => {
-        const fallback = L.HEADER_H + (i + 1) * L.ROW_H;
-        return lane(`lane-${user.id}`, devLaneY(user.id, fallback), devLaneH(user.id),
-          { label: user.name, width: totalW });
-      }),
+      lane('hdr',           0,                                       { isHeader: true,  width: totalW, height: L.HEADER_H, sprintName: this.currentSprint()?.name ?? 'Sprint' }),
+      lane('lane-incoming', L.HEADER_H,                              { label: 'Incoming', width: totalW, height: L.ROW_H, isIncoming: true }),
+      ...users.map((user, i) =>
+        lane(`lane-${user.id}`, L.HEADER_H + (i + 1) * L.ROW_H,    { label: user.name, width: totalW, height: L.ROW_H })
+      ),
       ...qaLanes,
     ];
   }

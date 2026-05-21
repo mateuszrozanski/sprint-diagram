@@ -364,9 +364,7 @@ export class DiagramDragService {
     updates: NodeUpdate[],
   ): void {
     const centerY = node.position.y + L.NODE_H / 2;
-    // Multi-lane aware lookup zamiast floor((y-H)/ROW_H) — devIdx bywał błędny
-    // dla devów poniżej kogoś z parallel lanes.
-    const devIdx  = centerY < L.HEADER_H + L.ROW_H ? -1 : this.yToRowIndex(centerY);
+    const devIdx  = Math.floor((centerY - L.HEADER_H) / L.ROW_H) - 1;
 
     if (devIdx >= 0 && devIdx < this.users().length) {
       const newAssignee = this.users()[devIdx].id;
@@ -396,9 +394,10 @@ export class DiagramDragService {
     updates: NodeUpdate[],
   ): void {
     const centerY = node.position.y + L.NODE_H / 2;
+    const rawRow  = Math.floor((centerY - L.HEADER_H) / L.ROW_H);
 
-    // Row 0 = incoming (BASE_H wysoka, zaczyna się na HEADER_H) → park bez assignee.
-    if (centerY < L.HEADER_H + L.ROW_H) {
+    // Row 0 = incoming → park bez assignee.
+    if (rawRow === 0) {
       this.sprint.liveAssignee.set(node.id, 'unassigned');
       const incomingY = L.HEADER_H + Math.round((L.ROW_H - L.NODE_H) / 2);
       updates.push({
@@ -494,47 +493,20 @@ export class DiagramDragService {
     const qaId   = `qa-${bugNode.data['displayId'] as string}`;
     const qaNode = this.nodeById(qaId);
     if (!qaNode) return;
-    // QA row top z rowYMap (pierwszy tester); brak testerów → po wszystkich devach.
-    const rowY = this.sprint.rowYMap();
-    let qaTop: number | undefined;
-    for (const [uid, y] of rowY) {
-      if (uid.startsWith('qa-')) { qaTop = y; break; }
-    }
-    const qaY = (qaTop ?? L.HEADER_H + (this.users().length + 1) * L.ROW_H)
-      + Math.round((L.ROW_H - L.NODE_H) / 2);
+    const qaY = L.HEADER_H + (this.users().length + 1) * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2);
     updates.push({ id: qaId, position: { x: bugX + (bugNode.data['width'] as number), y: qaY } });
   }
 
   private yToRowIndex(y: number): number {
-    // Z multi-lane per dev wysokości row są zmienne — szukamy po `rowYMap` /
-    // `rowHMap` zamiast floor((y-H)/ROW_H), bo ten ostatni przy 3-lane Aleksandra
-    // zwracał błędny devIdx dla każdego deva poniżej.
-    const users = this.users();
-    const rowY = this.sprint.rowYMap();
-    const rowH = this.sprint.rowHMap();
-    for (let i = 0; i < users.length; i++) {
-      const uid = users[i].id;
-      const top = rowY.get(uid);
-      if (top === undefined) continue;
-      const h = rowH.get(uid) ?? L.ROW_H;
-      if (y >= top && y < top + h) return i;
-    }
-    // Fallback — pierwszy lub ostatni dev w zależności od y.
-    if (!users.length) return -1;
-    return y < L.HEADER_H + L.ROW_H ? 0 : users.length - 1;
+    const rawRow = Math.floor((y - L.HEADER_H) / L.ROW_H);
+    return Math.max(0, Math.min(this.users().length - 1, rawRow - 1));
   }
 
   private rowIndexOf(nodeId: string): number {
     return this.users().findIndex(u => u.id === this.sprint.liveAssignee.get(nodeId));
   }
 
-  /** Top Y of dev row (lane 0). Karta ląduje w środku BASE_H, niezależnie ile
-   *  lanes ma dev w sumie — drag idzie do lane 0 deva (parallel-aware drop to
-   *  inny temat, na razie zachowujemy single-lane drop). */
   private rowSnapY(devIdx: number): number {
-    const userId = this.users()[devIdx]?.id;
-    const top = userId ? this.sprint.rowYMap().get(userId) : undefined;
-    if (top !== undefined) return top + Math.round((L.ROW_H - L.NODE_H) / 2);
     return L.HEADER_H + (devIdx + 1) * L.ROW_H + Math.round((L.ROW_H - L.NODE_H) / 2);
   }
 }

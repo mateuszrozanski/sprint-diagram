@@ -17,7 +17,7 @@ export interface AdoPbi {
   priority: number;        // 1 = highest
   type: 'Story' | 'Bug';
   /** Ordered list of work phases; handed off from one assignee to the next */
-  phases: { assigneeId: string; days: number; role: string; parallel?: boolean; title?: string; hours?: number; groupTaskTitles?: string[]; state?: string }[];
+  phases: { assigneeId: string; days: number; role: string; parallel?: boolean; title?: string; hours?: number; groupTaskTitles?: string[] }[];
   /** PBI IDs that must fully complete before this PBI can start */
   dependsOn?: string[];
   /** QA tester id (slugified display name) — z `Custom.QATester` w ADO */

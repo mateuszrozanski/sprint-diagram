@@ -1,4 +1,4 @@
-import { CALENDAR_SLOTS, SPRINT_START, type PBI } from './sprint-data';
+import { CALENDAR_SLOTS, type PBI } from './sprint-data';
 
 // ── Per-slot x helpers ───────────────────────────────────────────────────────
 
@@ -99,39 +99,6 @@ export function nearestWorkingSprintDay(offsetFromLabel: number): number {
     }
   }
   return 1;
-}
-
-/**
- * Px-offset (od LABEL_W) gdzie "dziś" wypada na osi czasu sprintu.
- *
- * Liczy się przez różnicę kalendarzowych dni między `SPRINT_START` a dziś, a
- * następnie przez `CALENDAR_SLOTS` mapuje na cumulative px (uwzględnia weekendy).
- *
- * Zwraca `null` jeśli:
- *   • dziś jest przed SPRINT_START → sprint jeszcze się nie zaczął
- *   • dziś jest po ostatnim slocie kalendarza → sprint już skończony
- *
- * Holiday day = pokazujemy linię w środku slotu (slot.sprintDay==null), bo
- * fizycznie "dziś" tam jest, niezależnie czy się pracuje czy nie.
- */
-export function getTodayXOffset(now: Date = new Date()): number | null {
-  const start = new Date(SPRINT_START);
-  start.setHours(0, 0, 0, 0);
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const dayDelta = Math.floor((today.getTime() - start.getTime()) / 86_400_000);
-  if (dayDelta < 0) return null;
-  if (dayDelta >= CALENDAR_SLOTS.length) return null;
-
-  // Cumulative px do początku slotu z indeksem = dayDelta, plus pół szerokości
-  // slotu żeby linia była w środku "dzisiejszego" dnia (nie na granicy z wczoraj).
-  let acc = 0;
-  for (let i = 0; i < dayDelta; i++) {
-    acc += CALENDAR_SLOTS[i].isWeekend ? L.WKND_W : L.DAY_W;
-  }
-  const slot = CALENDAR_SLOTS[dayDelta];
-  const slotW = slot.isWeekend ? L.WKND_W : L.DAY_W;
-  return acc + Math.round(slotW / 2);
 }
 
 export function getPbiPosition(pbi: PBI, userIndex: number) {

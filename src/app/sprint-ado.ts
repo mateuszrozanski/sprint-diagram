@@ -238,33 +238,35 @@ export function buildNodesFromAdo(
     return start;
   }
 
-  /** Lane allocator. Reguła:
-   *  - Phases NIE in-progress → zawsze lane 0, sekwencyjny pack (bump start do
-   *    lane[0].cursor). To preserveruje stare zachowanie (jeden ciąg per dev)
-   *    dla devów bez równoległej pracy.
-   *  - Phases in-progress (state inDev/blocked) → first-fit lane gdzie
-   *    cursor <= start. Brak takiej → spawn nowej lane. Tylko TUTAJ powstają
-   *    parallel pasy.
-   *  Wcześniej każda phase szła przez findIndex, co przy `start < lane[0].cursor`
-   *  (typowe gdy ktoś ma długi task ciągnący się dalej niż dziś) spawnowało nową
-   *  lane dla KAŻDEJ kolejnej phase → wszyscy dostawali N lanes nawet bez parallel. */
+  /** Lane allocator. Spawn nowej lane gdy:
+   *  B) phase state=inDev/blocked (ADO mówi "robi się teraz"), LUB
+   *  C) phase ready PRZED today (start < todayX) ALE lane 0 zajęta dalej niż
+   *     today (lanes[0] > todayX) — dev "ciągnie" coś dłużej niż powinien,
+   *     fresh ready phase nie musi czekać → wskakuje obok.
+   *  Inaczej: sekwencyjny pack lane 0 (bump start do lanes[0]).
+   *  Bez tego (czysty first-fit) każda phase z start<lanes[0] spawnowała lane
+   *  → wszyscy parallel. */
   function placeInLane(stub: PhaseStub, start: number, width: number): { laneIdx: number; placedX: number; endX: number } {
     const lanes = laneCursorsPerDev.get(stub.assigneeId) ?? [FIRST_X];
     if (!laneCursorsPerDev.has(stub.assigneeId)) {
       laneCursorsPerDev.set(stub.assigneeId, lanes);
     }
     const isInProgress = stub.stateCat === 'inDev' || stub.stateCat === 'blocked';
+    const collisionAfterToday = todayX !== null && start < todayX && lanes[0] > todayX;
+    const canSpawn = isInProgress || collisionAfterToday;
     let laneIdx: number;
     let effectiveStart = start;
-    if (isInProgress) {
+    if (canSpawn) {
+      // C: bump start do todayX, żeby spawned card nie startowała w przeszłości.
+      if (collisionAfterToday && todayX !== null) effectiveStart = Math.max(start, todayX);
       // First-fit. Brak fitującej → spawn.
-      laneIdx = lanes.findIndex(c => c <= start);
+      laneIdx = lanes.findIndex(c => c <= effectiveStart);
       if (laneIdx === -1) {
         laneIdx = lanes.length;
         lanes.push(FIRST_X);
       }
     } else {
-      // Sekwencyjny pack na lane 0 — bump start do cursor zamiast spawnować.
+      // Sekwencyjny pack na lane 0.
       laneIdx = 0;
       effectiveStart = Math.max(start, lanes[0]);
     }

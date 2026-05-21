@@ -238,19 +238,37 @@ export function buildNodesFromAdo(
     return start;
   }
 
-  /** First-fit lane: zwraca {laneIdx, x} gdzie phase ląduje, advanceuje cursor. */
+  /** Lane allocator. Reguła:
+   *  - Phases NIE in-progress → zawsze lane 0, sekwencyjny pack (bump start do
+   *    lane[0].cursor). To preserveruje stare zachowanie (jeden ciąg per dev)
+   *    dla devów bez równoległej pracy.
+   *  - Phases in-progress (state inDev/blocked) → first-fit lane gdzie
+   *    cursor <= start. Brak takiej → spawn nowej lane. Tylko TUTAJ powstają
+   *    parallel pasy.
+   *  Wcześniej każda phase szła przez findIndex, co przy `start < lane[0].cursor`
+   *  (typowe gdy ktoś ma długi task ciągnący się dalej niż dziś) spawnowało nową
+   *  lane dla KAŻDEJ kolejnej phase → wszyscy dostawali N lanes nawet bez parallel. */
   function placeInLane(stub: PhaseStub, start: number, width: number): { laneIdx: number; placedX: number; endX: number } {
     const lanes = laneCursorsPerDev.get(stub.assigneeId) ?? [FIRST_X];
     if (!laneCursorsPerDev.has(stub.assigneeId)) {
       laneCursorsPerDev.set(stub.assigneeId, lanes);
     }
-    // First-fit: pierwsza lane gdzie cursor <= start (czyli phase się mieści bez kolizji).
-    let laneIdx = lanes.findIndex(c => c <= start);
-    if (laneIdx === -1) {
-      laneIdx = lanes.length;
-      lanes.push(FIRST_X);
+    const isInProgress = stub.stateCat === 'inDev' || stub.stateCat === 'blocked';
+    let laneIdx: number;
+    let effectiveStart = start;
+    if (isInProgress) {
+      // First-fit. Brak fitującej → spawn.
+      laneIdx = lanes.findIndex(c => c <= start);
+      if (laneIdx === -1) {
+        laneIdx = lanes.length;
+        lanes.push(FIRST_X);
+      }
+    } else {
+      // Sekwencyjny pack na lane 0 — bump start do cursor zamiast spawnować.
+      laneIdx = 0;
+      effectiveStart = Math.max(start, lanes[0]);
     }
-    const { placedX } = placePhase(Math.max(lanes[laneIdx], start), width);
+    const { placedX } = placePhase(Math.max(lanes[laneIdx], effectiveStart), width);
     const effW = getEffectivePbiWidth(placedX, width);
     const endX = placedX + effW;
     lanes[laneIdx] = endX;

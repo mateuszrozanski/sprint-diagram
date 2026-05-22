@@ -27,24 +27,6 @@ export function getNonWorkingZones(): { left: number; width: number }[] {
 }
 
 /**
- * Per-user day-off zones — `{left, width}` dla każdego sprintDay z `daysOff`.
- * Pomija weekend/holiday slots (już są w `getNonWorkingZones`), żeby nie renderować
- * dwóch nakładających się bandów. Pusty input → pusta tablica.
- */
-export function getDayOffZones(daysOff: Set<number> | undefined): { left: number; width: number }[] {
-  if (!daysOff || daysOff.size === 0) return [];
-  const zones: { left: number; width: number }[] = [];
-  for (let i = 0; i < CALENDAR_SLOTS.length; i++) {
-    const slot = CALENDAR_SLOTS[i];
-    if (slot.sprintDay === null) continue;
-    if (slot.isNonWorking) continue;
-    if (!daysOff.has(slot.sprintDay)) continue;
-    zones.push({ left: getSlotXOffset(i), width: getSlotWidth(i) });
-  }
-  return zones;
-}
-
-/**
  * Returns {left, width} pairs (relative to the card's left edge)
  * for each non-working day column that overlaps with this PBI.
  */
@@ -180,33 +162,6 @@ export function skipNonWorkingX(x: number): number {
     changed = false;
     for (let i = 0; i < CALENDAR_SLOTS.length; i++) {
       if (!CALENDAR_SLOTS[i].isNonWorking) continue;
-      const slotLeft  = L.LABEL_W + getSlotXOffset(i);
-      const slotRight = slotLeft + getSlotWidth(i);
-      if (x >= slotLeft && x < slotRight) {
-        x = slotRight;
-        changed = true;
-        break;
-      }
-    }
-  }
-  return x;
-}
-
-/**
- * Wariant `skipNonWorkingX` świadomy days-off konkretnego deva. Push w prawo gdy
- * x wpada w global non-working slot (weekend/holiday) LUB w user-off slot.
- * `daysOff` to set sprintDay numbers (1-10) gdy ten dev jest off.
- * Bez daysOff (lub pusty set) zachowuje się identycznie jak `skipNonWorkingX`.
- */
-export function skipNonWorkingXForUser(x: number, daysOff?: Set<number>): number {
-  if (!daysOff || daysOff.size === 0) return skipNonWorkingX(x);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let i = 0; i < CALENDAR_SLOTS.length; i++) {
-      const slot = CALENDAR_SLOTS[i];
-      const isUserOff = slot.sprintDay !== null && daysOff.has(slot.sprintDay);
-      if (!slot.isNonWorking && !isUserOff) continue;
       const slotLeft  = L.LABEL_W + getSlotXOffset(i);
       const slotRight = slotLeft + getSlotWidth(i);
       if (x >= slotLeft && x < slotRight) {

@@ -65,14 +65,6 @@
         </div>
       }
 
-      <!-- Per-user day-off bands (capacity z ADO) — szare po lighter, żeby było odróżnialne od weekendów -->
-      @for (zone of dayOffZones(); track zone.left) {
-        <div class="day-off-band"
-             [style.left.px]="zone.left"
-             [style.width.px]="zone.width">
-        </div>
-      }
-
       <!-- Week 2 separator -->
       <div class="w2-sep" [style.left.px]="w2SepX"></div>
 

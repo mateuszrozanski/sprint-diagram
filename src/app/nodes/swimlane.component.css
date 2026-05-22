@@ -111,20 +111,6 @@
   pointer-events: none;
 }
 
-/* Per-user day-off band — niebieski tint odróżnialny od weekendów/holidays */
-.day-off-band {
-  position: absolute; top: 0; bottom: 0;
-  background-color: rgba(59, 130, 246, 0.18);
-  background-image: repeating-linear-gradient(
-    -45deg,
-    transparent             0px,
-    transparent             5px,
-    rgba(59, 130, 246, 0.25) 5px,
-    rgba(59, 130, 246, 0.25) 8px
-  );
-  pointer-events: none;
-}
-
 /* Week-2 separator */
 .w2-sep {
   position: absolute; top: 0; bottom: 0; width: 2px;

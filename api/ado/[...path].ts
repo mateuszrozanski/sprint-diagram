@@ -170,25 +170,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // GET /api/ado/capacities?iterationId=... → days off + activity capacity per team member.
-    // Cienki passthrough — frontend mapuje displayName → userId (slugifyUser) i zwija
-    // daysOff ranges w listę dat.
-    if (route === 'capacities' && req.method === 'GET') {
-      if (!ADO_TEAM) {
-        return res.status(500).json({ error: 'ADO_TEAM not configured' });
-      }
-      const iterationId = String(req.query['iterationId'] ?? '');
-      if (!/^[0-9a-f-]{36}$/i.test(iterationId)) {
-        return res.status(400).json({ error: 'Invalid or missing iterationId (expected UUID)' });
-      }
-      const data = await adoFetch(
-        `/teamsettings/iterations/${iterationId}/capacities?api-version=${API_VER}`,
-        {},
-        ADO_WORK_BASE,
-      );
-      return res.status(200).json(data);
-    }
-
     // GET /api/ado/workitems/:id
     if (segments[0] === 'workitems' && segments.length === 2 && req.method === 'GET') {
       const id = segments[1];

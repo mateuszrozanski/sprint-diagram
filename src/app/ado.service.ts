@@ -134,6 +134,17 @@ export class AdoService {
     // Capacity fetch — daysOff per team member. Fire-and-catch: brak iter id /
     // brak permissions → pusta mapa, board renderuje bez per-dev off bandów.
     const daysOffByUserId = new Map<string, Set<number>>();
+    // Porównanie po dacie YYYY-MM-DD (string) zamiast po timestamp — ADO zwraca
+    // ISO z "T00:00:00Z" (UTC), `slot.date` to local time. W timezone +02:00
+    // local Tue 00:00 = UTC Mon 22:00 < ADO UTC Tue 00:00 → mismatch. Stringi
+    // wyciętej daty (YYYY-MM-DD) są timezone-independent jeśli używamy konsystentnie.
+    const toIsoDate = (d: Date): string => {
+      // Local-date YYYY-MM-DD (nie toISOString który konwertuje na UTC).
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
     if (iteration?.id) {
       try {
         const capRaw = await fetchJson(`${ADO_BASE}/capacities?iterationId=${iteration.id}`);
@@ -144,14 +155,15 @@ export class AdoService {
           const userId = isQa ? 'qa-' + slugifyUser(name) : slugifyUser(name);
           const offDays = new Set<number>();
           for (const range of (entry.daysOff ?? [])) {
-            const start = range.start ? new Date(range.start) : null;
-            const end   = range.end   ? new Date(range.end)   : null;
-            if (!start || !end) continue;
-            // Range inclusive — iter po slotach kalendarza sprintu, zbieraj sprintDay.
+            if (!range.start || !range.end) continue;
+            // ADO zwraca ISO UTC ("2026-05-26T00:00:00Z"). Wyciągamy YYYY-MM-DD
+            // bezpośrednio ze stringa — pomijamy timezone shenanigans.
+            const startStr = String(range.start).slice(0, 10);
+            const endStr   = String(range.end).slice(0, 10);
             for (const slot of CALENDAR_SLOTS) {
               if (slot.sprintDay === null) continue;
-              const sd = slot.date;
-              if (sd >= start && sd <= end) offDays.add(slot.sprintDay);
+              const slotStr = toIsoDate(slot.date);
+              if (slotStr >= startStr && slotStr <= endStr) offDays.add(slot.sprintDay);
             }
           }
           if (offDays.size) daysOffByUserId.set(userId, offDays);

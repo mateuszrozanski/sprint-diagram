@@ -147,7 +147,9 @@ export class AdoService {
     };
     if (iteration?.id) {
       try {
-        const capRaw = await fetchJson(`${ADO_BASE}/capacities?iterationId=${iteration.id}`);
+        // cache:'no-store' — Vercel/browser cache zwraca 304 z pustym body
+        // przy condition-request, frontend dostaje null → daysOff puste.
+        const capRaw = await fetchJson(`${ADO_BASE}/capacities?iterationId=${iteration.id}`, { cache: 'no-store' });
         for (const entry of (capRaw.value ?? [])) {
           const name = entry.teamMember?.displayName as string | undefined;
           if (!name) continue;

@@ -186,6 +186,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         {},
         ADO_WORK_BASE,
       );
+      // No-cache — bez tego Vercel/browser zwraca 304 z pustym body, frontend
+      // dostaje null zamiast value i daysOff się nie wczytuje.
+      res.setHeader('Cache-Control', 'no-store, max-age=0');
       return res.status(200).json(data);
     }
 

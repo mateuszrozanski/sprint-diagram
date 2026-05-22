@@ -29,6 +29,11 @@ export class SwimlaneComponent implements NgDiagramNodeTemplate {
   protected readonly isQA       = computed(() => !!this.node().data['isQA']);
   protected readonly isHeader   = computed(() => !!this.node().data['isHeader']);
   protected readonly isIncoming = computed(() => !!this.node().data['isIncoming']);
+  /** Per-row day-off bandy (capacity z ADO). Liczone w app.component.buildLanes,
+   *  bo zależą od userId tej lane. */
+  protected readonly dayOffZones = computed(() =>
+    (this.node().data['dayOffZones'] as { left: number; width: number }[] | undefined) ?? []
+  );
 
   /** Trophy dla Alicji — wygrała ostatni hackaton w kat. Best Business Value. */
   protected readonly showTrophy = computed(() => {

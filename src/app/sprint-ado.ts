@@ -1,6 +1,6 @@
 import { ADO_MOCK_PBIS, CALENDAR_SLOTS, INCOMING_BUGS_MOCK, USERS, type AdoPbi, type PBI } from './sprint-data';
 import type { DiagramNode, DiagramEdge } from './sprint-data';
-import { L, getSprintDayOffset, getSlotXOffset, getSlotWidth, getQaWidth, getEffectiveQaWidth, getEffectivePbiWidth, nearestWorkingSprintDay, skipNonWorkingX } from './layout';
+import { L, getSprintDayOffset, getSlotXOffset, getSlotWidth, getQaWidth, getEffectiveQaWidth, getEffectivePbiWidth, nearestWorkingSprintDay, skipNonWorkingX, skipNonWorkingXForUser } from './layout';
 import { widthForHours } from './card-width';
 
 // ── Holiday-aware day helpers ────────────────────────────────────────────────
@@ -24,8 +24,10 @@ function nextWorkingDay(day: number): number {
  * Konsekwencja: phase może wizualnie przekraczać day-boundary w środku dnia.
  * To okej — day grid w nagłówku jest referencyjny, nie strict bin.
  */
-function placePhase(cursorX: number, phaseWidth: number): { placedX: number; nextCursor: number } {
-  const x = skipNonWorkingX(cursorX);
+function placePhase(cursorX: number, phaseWidth: number, daysOff?: Set<number>): { placedX: number; nextCursor: number } {
+  // Per-user skip — push cursora kiedy wpada w global non-working slot LUB w
+  // user-off slot (capacity z ADO). Fallback do global skip gdy daysOff puste.
+  const x = skipNonWorkingXForUser(cursorX, daysOff);
   return { placedX: x, nextCursor: x + phaseWidth };
 }
 
@@ -92,6 +94,7 @@ export function buildNodesFromAdo(
   items: AdoPbi[] = ADO_MOCK_PBIS,
   users: { id: string; name: string }[] = USERS,
   testers: { id: string; name: string }[] = [],
+  daysOffByUserId: Map<string, Set<number>> = new Map(),
 ): {
   nodes: DiagramNode[];
   edges: DiagramEdge[];
@@ -227,7 +230,7 @@ export function buildNodesFromAdo(
         const stub = stubById.get(id)!;
         const dev = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
         const w = widthForHours(stub.hours);
-        const { placedX } = placePhase(dev, w);
+        const { placedX } = placePhase(dev, w, daysOffByUserId.get(stub.assigneeId));
         const effW = getEffectivePbiWidth(placedX, w);
         scheduledX.set(id, placedX);
         scheduledEndX.set(id, placedX + effW);
@@ -251,7 +254,7 @@ export function buildNodesFromAdo(
 
     const winner = ready[0];
     const w = widthForHours(winner.stub.hours);
-    const { placedX } = placePhase(winner.start, w);
+    const { placedX } = placePhase(winner.start, w, daysOffByUserId.get(winner.stub.assigneeId));
     // VISUAL width = baseW + weekend slots inside span. devCursor MUSI advanceować
     // o effW, inaczej następna faza wyląduje "w środku" weekendu poprzedniej karty
     // i nakłada się na nią po pobraniu.

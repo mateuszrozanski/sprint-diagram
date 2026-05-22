@@ -1,7 +1,9 @@
 import { Injectable } from '@angular/core';
 import type { AdoPbi, SprintUser } from './sprint-data';
+import { CALENDAR_SLOTS } from './sprint-data';
 
 export interface AdoIteration {
+  id?:        string;
   name:       string;
   path:       string;
   startDate:  Date | null;
@@ -13,6 +15,8 @@ export interface AdoFetchResult {
   users: SprintUser[];
   testers: SprintUser[];
   iteration: AdoIteration | null;
+  /** sprintDay numbers (1-10) per userId, kiedy dev jest off. */
+  daysOffByUserId: Map<string, Set<number>>;
 }
 
 const ADO_BASE  = '/api/ado';
@@ -115,6 +119,7 @@ export class AdoService {
     ]);
 
     const iteration: AdoIteration | null = iterationRaw ? {
+      id:         iterationRaw.id,
       name:       iterationRaw.name,
       path:       iterationRaw.path,
       startDate:  iterationRaw.startDate  ? new Date(iterationRaw.startDate)  : null,
@@ -125,6 +130,36 @@ export class AdoService {
       .map((s: string) => s.trim())
       .filter(Boolean);
     const qaTesterNames: Set<string> = new Set(qaTesterOriginals.map(s => s.toLowerCase()));
+
+    // Capacity fetch — daysOff per team member. Fire-and-catch: brak iter id /
+    // brak permissions → pusta mapa, board renderuje bez per-dev off bandów.
+    const daysOffByUserId = new Map<string, Set<number>>();
+    if (iteration?.id) {
+      try {
+        const capRaw = await fetchJson(`${ADO_BASE}/capacities?iterationId=${iteration.id}`);
+        for (const entry of (capRaw.value ?? [])) {
+          const name = entry.teamMember?.displayName as string | undefined;
+          if (!name) continue;
+          const isQa = qaTesterNames.has(name.toLowerCase());
+          const userId = isQa ? 'qa-' + slugifyUser(name) : slugifyUser(name);
+          const offDays = new Set<number>();
+          for (const range of (entry.daysOff ?? [])) {
+            const start = range.start ? new Date(range.start) : null;
+            const end   = range.end   ? new Date(range.end)   : null;
+            if (!start || !end) continue;
+            // Range inclusive — iter po slotach kalendarza sprintu, zbieraj sprintDay.
+            for (const slot of CALENDAR_SLOTS) {
+              if (slot.sprintDay === null) continue;
+              const sd = slot.date;
+              if (sd >= start && sd <= end) offDays.add(slot.sprintDay);
+            }
+          }
+          if (offDays.size) daysOffByUserId.set(userId, offDays);
+        }
+      } catch (err) {
+        console.warn('[AdoService] capacity fetch failed (non-fatal)', err);
+      }
+    }
 
     // Devs from env (ADO_DEVS). Exclude anyone już w qaTesters — promotion do QA
     // overrules ADO_DEVS, inaczej osoba ma dwie swimlane (dev + QA).
@@ -142,7 +177,7 @@ export class AdoService {
     }));
 
     const pbiIds: number[] = (wiqlResult.workItems ?? []).map((w: any) => w.id);
-    if (!pbiIds.length) return { pbis: [], users, testers: [], iteration };
+    if (!pbiIds.length) return { pbis: [], users, testers: [], iteration, daysOffByUserId };
 
     const pbiItems = await fetchItems(pbiIds);
 
@@ -300,6 +335,7 @@ export class AdoService {
       users:   Array.from(usersById.values()),
       testers: Array.from(testersById.values()),
       iteration,
+      daysOffByUserId,
     };
   }
 }

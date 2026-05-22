@@ -57,7 +57,7 @@ function countWorkingDays(start: Date, finish: Date): number {
 }
 import { buildNodesFromAdo, buildIncomingBugs } from './sprint-ado';
 import { widthForHours } from './card-width';
-import { L, getTotalWidth, getEffectivePbiWidth } from './layout';
+import { L, getTotalWidth, getEffectivePbiWidth, getDayOffZones } from './layout';
 import { resolveQaCollisions } from './sprint-utils';
 import type { NodeUpdate } from './sprint-data';
 import { SwimlaneComponent }         from './nodes/swimlane.component';
@@ -1242,6 +1242,8 @@ export class AppComponent implements AfterViewInit {
             finishDate: result.iteration.finishDate ? result.iteration.finishDate.toISOString() : null,
           });
         }
+        // Save days-off MUSI być przed rebuildLanes — swimlane factory czyta z signal.
+        this.sprint.daysOffByUserId.set(result.daysOffByUserId ?? new Map());
 
         this.rebuildLanes();
       } catch (err) {
@@ -1251,7 +1253,7 @@ export class AppComponent implements AfterViewInit {
       await new Promise<void>(r => setTimeout(r, 1200));
     }
 
-    const { nodes, edges, assigneeMap, depsMap } = buildNodesFromAdo(pbis, users, testers);
+    const { nodes, edges, assigneeMap, depsMap } = buildNodesFromAdo(pbis, users, testers, this.sprint.daysOffByUserId());
     this.sprint.applyMaps(assigneeMap, depsMap);
 
     // Sprzątamy poprzednio dodane PBI/QA/edges przed wrzuceniem nowych.
@@ -1361,25 +1363,27 @@ export class AppComponent implements AfterViewInit {
   private buildLanes(): DiagramNode[] {
     const totalW = getTotalWidth();
     const users  = this.dataStore.users();
+    const daysOffMap = this.sprint.daysOffByUserId();
 
     const lane = (id: string, y: number, data: Record<string, unknown>): DiagramNode => ({
       id, type: 'swimlane', zOrder: 0, position: { x: 0, y }, data, draggable: false,
     });
 
     const testers = this.testers();
-    // Jeśli mamy testerów z ADO → po jednej sub-lane per tester. Inaczej fallback do jednej generycznej QA.
+    // Per-tester sub-lane z own dayOff bandami. Bez ADO testerów → jedna generyczna QA bez bandów (nie wiemy do kogo).
     const qaLanes: DiagramNode[] = testers.length
       ? testers.map((t, i) =>
           lane(`lane-${t.id}`, L.HEADER_H + (users.length + 1 + i) * L.ROW_H,
-            { label: `QA · ${t.name}`, width: totalW, height: L.ROW_H, isQA: true }))
+            { label: `QA · ${t.name}`, width: totalW, height: L.ROW_H, isQA: true,
+              dayOffZones: getDayOffZones(daysOffMap.get(t.id)) }))
       : [lane('lane-qa', L.HEADER_H + (users.length + 1) * L.ROW_H,
-          { label: 'QA / Testing', width: totalW, height: L.ROW_H, isQA: true })];
+          { label: 'QA / Testing', width: totalW, height: L.ROW_H, isQA: true, dayOffZones: [] })];
 
     return [
       lane('hdr',           0,                                       { isHeader: true,  width: totalW, height: L.HEADER_H, sprintName: this.currentSprint()?.name ?? 'Sprint' }),
-      lane('lane-incoming', L.HEADER_H,                              { label: 'Incoming', width: totalW, height: L.ROW_H, isIncoming: true }),
+      lane('lane-incoming', L.HEADER_H,                              { label: 'Incoming', width: totalW, height: L.ROW_H, isIncoming: true, dayOffZones: [] }),
       ...users.map((user, i) =>
-        lane(`lane-${user.id}`, L.HEADER_H + (i + 1) * L.ROW_H,    { label: user.name, width: totalW, height: L.ROW_H })
+        lane(`lane-${user.id}`, L.HEADER_H + (i + 1) * L.ROW_H,    { label: user.name, width: totalW, height: L.ROW_H, dayOffZones: getDayOffZones(daysOffMap.get(user.id)) })
       ),
       ...qaLanes,
     ];

@@ -14,6 +14,11 @@ export class SprintService {
   readonly isBugsLoaded  = signal(false);
   readonly undoLabel     = signal<string | null>(null);
 
+  /** Days off per dev/tester (z ADO capacity). Mapuje userId → set sprintDay (1-10)
+   *  kiedy dev jest off. Scheduler skipuje te dni dla danego deva, swimlane renderuje
+   *  szare bandy per row. */
+  readonly daysOffByUserId = signal<Map<string, Set<number>>>(new Map());
+
   private undoSnapshot: UndoSnapshot | null = null;
 
   applyMaps(assigneeMap: Map<string, string>, depsMap: Map<string, string[]>): void {

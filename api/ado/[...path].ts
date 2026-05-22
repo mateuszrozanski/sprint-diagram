@@ -170,6 +170,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // GET /api/ado/pat-info → ile dni do wygaśnięcia PAT. Czyta env ADO_PAT_EXPIRY
+    // (ISO date "YYYY-MM-DD"), zwraca {expiry, daysLeft}. Brak env → daysLeft=null,
+    // frontend nie pokazuje chip (graceful degrade). PM ustawia env po każdej
+    // rotacji PAT żeby uniknąć "rano nie działa".
+    if (route === 'pat-info' && req.method === 'GET') {
+      const expiry = process.env['ADO_PAT_EXPIRY'] ?? '';
+      let daysLeft: number | null = null;
+      if (/^\d{4}-\d{2}-\d{2}/.test(expiry)) {
+        const expDate = new Date(expiry);
+        const now     = new Date();
+        const msPerDay = 86_400_000;
+        daysLeft = Math.floor((expDate.getTime() - now.getTime()) / msPerDay);
+      }
+      res.setHeader('Cache-Control', 'no-store, max-age=0');
+      return res.status(200).json({ expiry: expiry || null, daysLeft });
+    }
+
     // GET /api/ado/capacities?iterationId=... → days off + activity capacity per team member.
     // Cienki passthrough — frontend mapuje displayName → userId (slugifyUser) i zwija
     // daysOff ranges w listę dat.

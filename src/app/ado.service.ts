@@ -108,6 +108,15 @@ export class AdoService {
    * Tasków NIE pobieramy — daje to czysty widok "jedna karta per PBI per assignee" do daily.
    * Zwraca union istniejących userów + odkrytych z ADO (display name → slug id).
    */
+  /** GET /api/ado/pat-info → ile dni do wygaśnięcia PAT (lub null gdy env brak). */
+  async fetchPatInfo(): Promise<{ expiry: string | null; daysLeft: number | null }> {
+    try {
+      return await fetchJson(`${ADO_BASE}/pat-info`, { cache: 'no-store' });
+    } catch {
+      return { expiry: null, daysLeft: null };
+    }
+  }
+
   async fetchSprintItems(users: SprintUser[]): Promise<AdoFetchResult> {
     // Equolegle: iteration metadata + WIQL
     const [iterationRaw, wiqlResult] = await Promise.all([

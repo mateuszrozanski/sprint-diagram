@@ -19,6 +19,11 @@ export class SprintService {
    *  szare bandy per row. */
   readonly daysOffByUserId = signal<Map<string, Set<number>>>(new Map());
 
+  /** ADO PAT expiry info — z env `ADO_PAT_EXPIRY`. null gdy env nie ustawione.
+   *  PM ustawia po każdej rotacji PAT żeby chip w UI ostrzegał z wyprzedzeniem. */
+  readonly patExpiry   = signal<string | null>(null);
+  readonly patDaysLeft = signal<number | null>(null);
+
   private undoSnapshot: UndoSnapshot | null = null;
 
   applyMaps(assigneeMap: Map<string, string>, depsMap: Map<string, string[]>): void {

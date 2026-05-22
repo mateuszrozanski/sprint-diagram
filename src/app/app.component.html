@@ -59,6 +59,15 @@
                 (click)="loadFromAdo()">
           @if (sprint.isLoading()) { ⏳ Loading… } @else { 🔄 Reload from ADO }
         </button>
+        @if (sprint.patDaysLeft() !== null) {
+          <span class="pat-chip"
+                [class.pat-ok]="(sprint.patDaysLeft() ?? 0) > 14"
+                [class.pat-warn]="(sprint.patDaysLeft() ?? 0) > 7 && (sprint.patDaysLeft() ?? 0) <= 14"
+                [class.pat-crit]="(sprint.patDaysLeft() ?? 0) <= 7"
+                [title]="'PAT wygasa ' + (sprint.patExpiry() ?? '')">
+            🔑 PAT: {{ sprint.patDaysLeft() }}d
+          </span>
+        }
         <button class="btn-ado" (click)="toggleScenarios()" title="Zapisane scenariusze">📁 Scenarios</button>
         <button class="btn-ado"
                 [class.active]="showDiff()"

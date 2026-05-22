@@ -49,6 +49,19 @@ h1 { margin: 0; font-size: 14px; font-weight: 600; color: #d4d4d4; }
 .btn-load:hover:not([disabled]) { background: rgba(0,120,212,0.22); }
 .btn-load[disabled]  { opacity: 0.6; cursor: default; }
 
+/* PAT expiry chip — zielony >14d, żółty 7-14d, czerwony ≤7d. PM widzi z wyprzedzeniem. */
+.pat-chip {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600;
+  padding: 4px 10px; border-radius: 2px;
+  white-space: nowrap; cursor: help;
+  border: 1px solid transparent;
+}
+.pat-chip.pat-ok   { background: rgba(34,197,94,0.12); color: #22c55e; border-color: rgba(34,197,94,0.4); }
+.pat-chip.pat-warn { background: rgba(234,179,8,0.15); color: #eab308; border-color: rgba(234,179,8,0.5); }
+.pat-chip.pat-crit { background: rgba(239,68,68,0.18); color: #ef4444; border-color: rgba(239,68,68,0.6); animation: pat-pulse 2s infinite; }
+@keyframes pat-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+
 .btn-bugs {
   background: rgba(212,134,10,0.1); border: 1px solid rgba(212,134,10,0.4);
   border-radius: 2px; color: #d4860a; font-size: 12px; font-family: inherit;

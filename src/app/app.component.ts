@@ -1205,6 +1205,11 @@ export class AppComponent implements AfterViewInit {
 
     if (this.useAdo) {
       try {
+        // Fire-and-forget — PAT info nie blokuje glównego loadu.
+        this.adoService.fetchPatInfo().then(info => {
+          this.sprint.patExpiry.set(info.expiry);
+          this.sprint.patDaysLeft.set(info.daysLeft);
+        });
         const result = await this.adoService.fetchSprintItems([]);
         pbis    = result.pbis;
         // Fallback do prev signal jeśli result puste (iteration fetch failed).

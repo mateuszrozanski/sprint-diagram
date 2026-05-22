@@ -150,7 +150,9 @@ export class AdoService {
         // cache:'no-store' — Vercel/browser cache zwraca 304 z pustym body
         // przy condition-request, frontend dostaje null → daysOff puste.
         const capRaw = await fetchJson(`${ADO_BASE}/capacities?iterationId=${iteration.id}`, { cache: 'no-store' });
-        for (const entry of (capRaw.value ?? [])) {
+        // Endpoint może zwracać `value` (legacy) lub `teamMembers` (nowsze). Bierzemy oba.
+        const entries = capRaw.value ?? capRaw.teamMembers ?? [];
+        for (const entry of entries) {
           const name = entry.teamMember?.displayName as string | undefined;
           if (!name) continue;
           const isQa = qaTesterNames.has(name.toLowerCase());

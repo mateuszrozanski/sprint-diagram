@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import type { AdoPbi, SprintUser } from './sprint-data';
-import { CALENDAR_SLOTS } from './sprint-data';
+import { CALENDAR_SLOTS, categorizeState } from './sprint-data';
 
 export interface AdoIteration {
   id?:        string;

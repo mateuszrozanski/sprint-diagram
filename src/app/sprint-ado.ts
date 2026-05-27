@@ -129,6 +129,7 @@ export function buildNodesFromAdo(
     totalPhases: number;
     isHalfDay: boolean;
     isParallel: boolean;
+    isClosed: boolean;
     x: number;
     width: number;
   }
@@ -149,6 +150,8 @@ export function buildNodesFromAdo(
     title: string;
     parentTitle?: string;
     deps: Set<string>;
+    isClosed: boolean;
+    closedDay?: number;
   }
 
   const stubs: PhaseStub[] = [];
@@ -189,19 +192,33 @@ export function buildNodesFromAdo(
         title: phase.title ?? pbi.title,
         parentTitle: phase.title ? pbi.title : undefined,
         deps,
+        isClosed: !!phase.isClosed,
+        closedDay: phase.closedDay,
       };
       stubs.push(stub);
       stubById.set(phaseId, stub);
     }
   }
 
-  // ── 2) List scheduling: zawsze pickuj phase ready (deps zaplanowane) ────
-  // z najwcześniejszym możliwym startem. Wypełnia dziury w dev-cursors zamiast
-  // sztywnego trzymania PBI-by-PBI loopa (który zostawiał Aleksandrowi 5-day
-  // gap po cross-PBI zależności od kogoś innego).
+  // ── 1.5) Pre-schedule closed phases na fixed x (z closedDay) ───────────
+  // Ghost cards z przeszłości — siedzą gdzie task był zamknięty, nie pakujemy.
+  // devCursor advance żeby open phases nie wpadały na nie.
   const scheduledX = new Map<string, number>();
   const scheduledEndX = new Map<string, number>();
-  const pending = new Set<string>(stubs.map(s => s.id));
+  for (const stub of stubs) {
+    if (!stub.isClosed || stub.closedDay === undefined) continue;
+    const w = widthForHours(stub.hours);
+    const x = L.LABEL_W + getSprintDayOffset(stub.closedDay) + L.PAD;
+    const effW = getEffectivePbiWidth(x, w);
+    scheduledX.set(stub.id, x);
+    scheduledEndX.set(stub.id, x + effW);
+    // Advance devCursor żeby open phases startowały po closed.
+    const prev = devCursorPx.get(stub.assigneeId) ?? FIRST_X;
+    if (x + effW > prev) devCursorPx.set(stub.assigneeId, x + effW);
+  }
+
+  // ── 2) List scheduling open phases (closed już zaplanowane w 1.5) ──────
+  const pending = new Set<string>(stubs.filter(s => !s.isClosed).map(s => s.id));
 
   while (pending.size > 0) {
     // Intra-PBI handoff JEST respektowany: Testing dla PBI X nie może startować
@@ -290,6 +307,7 @@ export function buildNodesFromAdo(
       totalPhases: stub.pbi.phases.length,
       isHalfDay:   stub.isHalfDay,
       isParallel:  stub.isParallel,
+      isClosed:    stub.isClosed,
       x,
       width:       w,
     });
@@ -355,6 +373,7 @@ export function buildNodesFromAdo(
         phaseIdx:        pl.phaseIdx,
         totalPhases:     pl.totalPhases,
         state:           parentPbi?.state,
+        isClosed:        pl.isClosed,
       },
     });
 

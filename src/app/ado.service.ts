@@ -269,6 +269,59 @@ export class AdoService {
       return out;
     }
 
+    /** Zamknięte taski w sprincie: state = done-category, ClosedDate w sprincie.
+     *  Zwraca też hours (CompletedWork lub OriginalEstimate) i closedDay (1-10).
+     *  Bez closedDate (np. zamknięty wcześniej w prehistorii) → odrzucane. */
+    function closedChildTasksInSprint(pbi: any): { task: any; hours: number; closedDay: number }[] {
+      const childIds = (pbi.relations ?? [])
+        .filter((r: any) => r.rel === 'System.LinkTypes.Hierarchy-Forward')
+        .map((r: any) => extractId(r.url));
+      const out: { task: any; hours: number; closedDay: number }[] = [];
+      for (const id of childIds) {
+        const t = taskMap.get(id);
+        if (!t) continue;
+        if (t.fields['System.WorkItemType'] !== 'Task') continue;
+        const cat = categorizeState(t.fields['System.State']);
+        if (cat !== 'done') continue;
+        // Date kiedy task został zamknięty/zrobiony — preferujemy ClosedDate, fallback ResolvedDate / StateChangeDate.
+        const closedIso: string | undefined =
+          t.fields['Microsoft.VSTS.Common.ClosedDate']
+          ?? t.fields['Microsoft.VSTS.Common.ResolvedDate']
+          ?? t.fields['System.StateChangeDate'];
+        if (!closedIso) continue;
+        const closedDate = new Date(closedIso);
+        // Mapuj na sprintDay przez kalendarz. Closed poza sprintem → skip.
+        const closedYmd = closedIso.slice(0, 10);
+        let sprintDay: number | null = null;
+        for (const slot of CALENDAR_SLOTS) {
+          if (slot.sprintDay === null) continue;
+          const slotYmd = `${slot.date.getFullYear()}-${String(slot.date.getMonth()+1).padStart(2,'0')}-${String(slot.date.getDate()).padStart(2,'0')}`;
+          if (slotYmd === closedYmd) { sprintDay = slot.sprintDay; break; }
+        }
+        if (sprintDay === null) {
+          // Closed dokładnie w weekend → mapuj na najbliższy working day wstecz (Friday).
+          // Bez tego task zamknięty w piątek wieczór z ClosedDate=sobota wypadał z board.
+          const day = closedDate.getDay();
+          if (day === 0 || day === 6) {
+            // szukamy poprzedniego working day w slotach
+            for (let i = CALENDAR_SLOTS.length - 1; i >= 0; i--) {
+              const slot = CALENDAR_SLOTS[i];
+              if (slot.sprintDay === null) continue;
+              if (slot.date <= closedDate) { sprintDay = slot.sprintDay; break; }
+            }
+          }
+        }
+        if (sprintDay === null) continue;
+        const completed = t.fields['Microsoft.VSTS.Scheduling.CompletedWork'] as number | undefined;
+        const orig      = t.fields['Microsoft.VSTS.Scheduling.OriginalEstimate'] as number | undefined;
+        const hours = (typeof completed === 'number' && completed > 0) ? completed
+                    : (typeof orig === 'number' && orig > 0) ? orig
+                    : 1;
+        out.push({ task: t, hours, closedDay: sprintDay });
+      }
+      return out;
+    }
+
     const pbis: AdoPbi[] = pbiItems.map((pbi): AdoPbi | null => {
       const fields    = pbi.fields;
       const type      = fields['System.WorkItemType'] === 'Bug' ? 'Bug' : 'Story';
@@ -279,19 +332,18 @@ export class AdoService {
         .map((r: any) => String(extractId(r.url)));
 
       // Granularność task — jedna faza per otwarty Task (RemainingWork > 0).
-      // Taski QA-testerów też idą jako phases (z assigneeId='qa-...') — wpadną
-      // do QA sub-lane przez testerIndex w sprint-ado.ts.
+      // Plus oddzielne grupy dla closed tasków w sprincie — żeby na koniec sprintu
+      // widzieć co już zrobione (ghost cards na pozycji ClosedDate).
       const openTasks = openChildTasksFor(pbi);
-      const devTasks = openTasks;
+      const closedTasks = closedChildTasksInSprint(pbi);
 
       // ── Grupowanie tasków po (activity, assignee) ─────────────────────
-      // Zamiast 1 karty per task (kompletnie nieczytelne przy 5-10 tasków),
-      // grupujemy taski o tej samej aktywności (Development/Testing/Design)
-      // i tym samym dev-ie w JEDNĄ kartę. Hours = suma. Jeśli dwóch devów
-      // robi Development tego samego PBI → dwie karty "Development".
-      type Group = { activity: string; assigneeId: string; hours: number; titles: string[] };
+      // Closed grupowane oddzielnie po (activity, assignee, closedDay) — każdy dzień
+      // zamknięcia to osobna ghost karta na timeline, inaczej kilka closed z różnych
+      // dni stworzyłoby jedną wielką w średniej pozycji.
+      type Group = { activity: string; assigneeId: string; hours: number; titles: string[]; closedDay?: number };
       const groupMap = new Map<string, Group>();
-      for (const t of devTasks) {
+      for (const t of openTasks) {
         const activity   = activityFromTask(t);
         const assigneeId = resolveAssignee(t.fields['System.AssignedTo']?.displayName);
         const hours      = t.fields['Microsoft.VSTS.Scheduling.RemainingWork'] as number;
@@ -303,6 +355,19 @@ export class AdoService {
           existing.titles.push(title);
         } else {
           groupMap.set(key, { activity, assigneeId, hours, titles: [title] });
+        }
+      }
+      for (const { task: t, hours, closedDay } of closedTasks) {
+        const activity   = activityFromTask(t);
+        const assigneeId = resolveAssignee(t.fields['System.AssignedTo']?.displayName);
+        const key        = `closed|${activity}|${assigneeId}|${closedDay}`;
+        const existing   = groupMap.get(key);
+        const title      = t.fields['System.Title'] as string;
+        if (existing) {
+          existing.hours += hours;
+          existing.titles.push(title);
+        } else {
+          groupMap.set(key, { activity, assigneeId, hours, titles: [title], closedDay });
         }
       }
 
@@ -337,6 +402,8 @@ export class AdoService {
                             ? `${g.label} (${g.titles.length} tasks)`
                             : g.label,
         groupTaskTitles:  g.titles,
+        isClosed:         g.closedDay !== undefined,
+        closedDay:        g.closedDay,
       }));
 
       const tester = resolveTester(fields['Custom.QATester']?.displayName);

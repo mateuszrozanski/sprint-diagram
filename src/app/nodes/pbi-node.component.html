@@ -1,5 +1,6 @@
 <div class="pbi-card"
      [class.blocked]="isBlocked()"
+     [class.is-closed]="!!node().data['isClosed']"
      [class.scope-highlight]="isScopeHighlighted()"
      [class.scope-target]="isScopeTarget()"
      [attr.data-diff-flag]="node().data['diffFlag']"
